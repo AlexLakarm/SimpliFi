@@ -32,7 +32,7 @@ export default function Home() {
           text-2xl md:text-3xl 
           text-foreground/90
           max-w-4xl
-          mt-8
+          mt-20
           mx-auto
           leading-relaxed
           px-4

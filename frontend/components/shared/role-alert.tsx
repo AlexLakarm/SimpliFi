@@ -41,33 +41,53 @@ export function RoleAlert({ roleState }: RoleAlertProps) {
   }
 
   return (
-    <div className="fixed top-20 left-4 w-full max-w-lg">
-      <Alert variant="default" className="bg-background/95 backdrop-blur-sm border-muted py-3">
-        <div className="flex items-center gap-4">
+    <div className="
+      fixed 
+      top-[60px] 
+      md:top-[72px] 
+      left-4 
+      w-[calc(100%-2rem)] 
+      sm:w-[500px] 
+      md:w-1/3
+      min-w-[300px] 
+      max-w-[600px]
+      z-40
+    ">
+      <Alert variant="default" className="
+        bg-background/95 
+        backdrop-blur-sm 
+        border-muted 
+        py-1.5 
+        md:py-2 
+        px-3 
+        md:px-4
+        mt-2
+        shadow-lg
+      ">
+        <div className="flex items-center gap-1.5 md:gap-3">
           {hasRole ? (
-            <UserCheck className="h-6 w-6 text-green-500 flex-shrink-0" />
+            <UserCheck className="h-4 w-4 md:h-5 md:w-5 text-green-500 flex-shrink-0" />
           ) : (
-            <UserX className="h-6 w-6 text-red-400 flex-shrink-0" />
+            <UserX className="h-4 w-4 md:h-5 md:w-5 text-red-400 flex-shrink-0" />
           )}
-          <div className="space-y-0.5">
-            <AlertTitle className="text-base font-medium">
+          <div className="space-y-0">
+            <AlertTitle className="text-xs md:text-sm font-medium">
               Bienvenue
             </AlertTitle>
-            <AlertDescription className="text-sm text-muted-foreground">
+            <AlertDescription className="text-xs md:text-sm text-muted-foreground leading-tight">
               {hasRole ? (
                 <>
-                  Vous êtes connecté avec l&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
-                  cette adresse est bien enregistrée en tant que <span className="font-semibold text-foreground">{role}</span> sur SimpliFi.
+                  L&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)}{' '}
+                  est enregistrée en tant que <span className="font-semibold text-foreground">{role}</span> sur SimpliFi.
                 </>
               ) : (
                 <>
-                  Vous êtes connecté avec l&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
-                  cette adresse n&apos;a pas encore de rôle attribué sur SimpliFi.{' '}
+                  L&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)} n&apos;a pas de rôle.{' '}
                   <Link 
                     href="/dapp/contact" 
-                    className="underline underline-offset-4 hover:text-primary"
+                    className="underline underline-offset-2 hover:text-primary"
                   >
-                    Contactez-nous !
+                    Contactez-nous
                   </Link>
                 </>
               )}

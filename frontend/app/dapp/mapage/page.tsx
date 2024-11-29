@@ -21,7 +21,7 @@ export default function DappPage() {
   return (
     <>
       <RoleAlert roleState={roleState} />
-      <h2 className="text-3xl font-bold mt-4 text-center">Bienvenue sur votre page</h2>
+      <h2 className="text-3xl font-bold mt-4 text-center text-white/80">Bienvenue sur votre page</h2>
     </>
   );
 }
