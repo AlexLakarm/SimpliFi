@@ -56,13 +56,13 @@ export function RoleAlert({ roleState }: RoleAlertProps) {
             <AlertDescription className="text-sm text-muted-foreground">
               {hasRole ? (
                 <>
-                  Vous êtes connecté avec l'adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
+                  Vous êtes connecté avec l&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
                   cette adresse est bien enregistrée en tant que <span className="font-semibold text-foreground">{role}</span> sur SimpliFi.
                 </>
               ) : (
                 <>
-                  Vous êtes connecté avec l'adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
-                  cette adresse n'a pas encore de rôle attribué sur SimpliFi.{' '}
+                  Vous êtes connecté avec l&apos;adresse {address?.slice(0, 6)}...{address?.slice(-4)}, 
+                  cette adresse n&apos;a pas encore de rôle attribué sur SimpliFi.{' '}
                   <Link 
                     href="/dapp/contact" 
                     className="underline underline-offset-4 hover:text-primary"

@@ -7,17 +7,12 @@ import { ArrowRight, Rocket } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
-import { Geist, Inter, Orbitron } from "next/font/google";
+import { Geist, Inter } from "next/font/google";
 import backgroundImage from './../public/assets/fonddegrad.jpg';
 
 const inter = Inter({ 
   subsets: ["latin"],
   weight: ['700']
-});
-
-const orbitron = Orbitron({
-  weight: ['700'],
-  subsets: ['latin']
 });
 
 const geist = Geist({
@@ -70,7 +65,7 @@ export default function Home() {
             <CardContent className="relative z-10 flex-1 flex flex-col items-center justify-center">
               <div className="text-center">
                 <p className="text-lg mb-8 max-w-sm">
-                  Découvrez avec nous le monde de la blockchain, de l'installation de votre premier portefeuille numérique aux arcanes de la finance décentralisée.
+                  Découvrez avec nous le monde de la blockchain, de l&apos;installation de votre premier portefeuille numérique aux arcanes de la finance décentralisée.
                 </p>
                 <div className="flex justify-center">
                   <Link href="/learn">
@@ -126,7 +121,7 @@ export default function Home() {
               ) : (
                 <div className="text-center">
                   <p className="text-lg mb-8 max-w-sm">
-                    Veuillez connecter votre portefeuille en haut à droite de votre écran pour accéder à l'application décentralisée.
+                    Veuillez connecter votre portefeuille en haut à droite de votre écran pour accéder à l&apos;application décentralisée.
                   </p>
                 </div>
               )}

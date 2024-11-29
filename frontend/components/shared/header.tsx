@@ -1,7 +1,6 @@
 "use client"
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { ModeToggle } from "@/components/ui/mode-toggle";
-import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -14,7 +13,7 @@ const orbitron = Orbitron({
 });
 
 const Header = () => {
-    const { toast } = useToast();
+
     const pathname = usePathname();
     const showBackButton = pathname.startsWith('/vault');
 
