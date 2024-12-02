@@ -4,20 +4,33 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MockPendleOracle is Ownable {
+
+    // ::::::::::::: CONSTANTS ::::::::::::: // 
+
     // Échelle pour la précision (1e18)
     uint256 private constant SCALE = 1e18;
+
+    // ::::::::::::: MAPPINGS ::::::::::::: // 
 
     // Mappings pour stocker les données par adresse de token
     mapping(address => uint256) private tokenToPtRates; // Taux des PT
     mapping(address => uint256) private annualYieldsPts; // Rendements annuels en %
     mapping(address => uint256) private strategiesDurations; // Durées des stratégies en secondes
 
+    // ::::::::::::: EVENTS ::::::::::::: // 
+
     // Events pour le suivi des mises à jour
     event RateUpdated(address indexed token, uint256 newRate);
     event YieldUpdated(address indexed token, uint256 newYield);
     event DurationUpdated(address indexed token, uint256 newDuration);
 
+    // ::::::::::::: CONSTRUCTOR ::::::::::::: // 
+
     constructor()Ownable(msg.sender) {}
+
+    // ::::::::::::: FUNCTIONS ::::::::::::: //     
+
+    // :::: STRATEGY SETTINGS :::: // 
 
     // Fonction pour mettre à jour le taux PT et le rendement annuel
     function setRateAndPrice(address _ptTokenAddress, uint256 _annualYieldPoints) external onlyOwner {
@@ -38,6 +51,8 @@ contract MockPendleOracle is Ownable {
 
         emit DurationUpdated(_ptTokenAddress, _duration);
     }
+
+    // :::: STRATEGY GETTERS :::: // 
 
     // Fonction pour récupérer le taux PT d'un token
     function getPTRate(address _ptTokenAddress) external view returns (uint256) {

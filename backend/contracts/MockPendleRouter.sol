@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+// ::::::::::::: ERRORS ::::::::::::: // 
+
 error RouterInsufficientPtOut(uint256 actualPtOut, uint256 requiredPtOut);
 error RouterInsufficientTokenOut(uint256 actualTokenOut, uint256 requiredTokenOut);
 error MarketExpired();
@@ -11,6 +13,8 @@ error YCNotExpired();
 error ZeroAddress();
 error MarketZeroAmountsInput();
 error InsufficientAllowance(address token, uint256 currentAllowance, uint256 requiredAmount);
+
+// ::::::::::::: INTERFACES ::::::::::::: // 
 
 interface IPriceOracle {
     function getPTRate(address token) external view returns (uint256);
@@ -32,12 +36,16 @@ interface IgUSDC is IERC20 {
 
 contract MockPendleRouter is Ownable {
 
+    // ::::::::::::: CONSTANTS ::::::::::::: // 
+
     address public gUSDC;
     address public PTgUSDC;
-
+    uint256 private constant SCALE = 1e18;
 
     IPriceOracle public priceOracle;
     IPtgUSDC public ptgUSDC;
+
+    // ::::::::::::: MAPPINGS ::::::::::::: // 
 
     // Mapping des soldes par utilisateur et par date de maturité
     mapping(address => mapping(uint256 => uint256)) public userBalances;
@@ -45,7 +53,12 @@ contract MockPendleRouter is Ownable {
     // Mapping des tokens vers leurs PT
     mapping(address => address) public tokenToPt;
 
-    // Ajout des structures et mappings au début du contrat après les déclarations existantes
+    // Mapping pour stocker les détails de la stratégie pour chaque utilisateur et date de maturité
+    mapping(address => mapping(uint256 => Strategy)) public userStrategies;
+
+    // ::::::::::::: STRUCTS ::::::::::::: // 
+
+    // Structure pour stocker les détails de la stratégie
     struct Strategy {
         uint256 annualYield;
         uint256 duration;
@@ -53,8 +66,7 @@ contract MockPendleRouter is Ownable {
         uint256 amount;
     }
     
-    // Mapping pour stocker les détails de la stratégie pour chaque utilisateur et date de maturité
-    mapping(address => mapping(uint256 => Strategy)) public userStrategies;
+    // ::::::::::::: EVENTS ::::::::::::: // 
 
     event Swapped(
         address indexed user,
@@ -74,8 +86,7 @@ contract MockPendleRouter is Ownable {
     );
     event ParametersUpdated(uint256 newDuration, uint256 newYield);
 
-
-    uint256 private constant SCALE = 1e18;
+    // ::::::::::::: CONSTRUCTOR ::::::::::::: // 
 
     constructor(address _gUSDCAddress, address _PTgUSDCAdress, address _OracleAddress) Ownable(msg.sender) {
         gUSDC = _gUSDCAddress;
@@ -86,6 +97,8 @@ contract MockPendleRouter is Ownable {
         // Initialisation du mapping pour gUSDC
         tokenToPt[_gUSDCAddress] = _PTgUSDCAdress;
     }
+
+    // ::::::::::::: FUNCTIONS ::::::::::::: // 
 
     // Nouvelle fonction pour gérer les associations token -> PT
     function setTokenToPt(address token, address pt) external onlyOwner {
@@ -152,11 +165,6 @@ contract MockPendleRouter is Ownable {
         );
     }
 
-    // Fonction pour récupérer les soldes par maturité
-    function getBalance(address user, uint256 maturityDate) external view returns (uint256) {
-        return userBalances[user][maturityDate];
-    }
-
     // Renommage de claimYield en redeemPyToToken pour correspondre à la nomenclature Pendle
     function redeemPyToToken(address tokenAddress, uint256 maturityDate) external {
         if (block.timestamp < maturityDate) revert YCNotExpired();
@@ -215,6 +223,14 @@ contract MockPendleRouter is Ownable {
         );
     }
 
+    // ::::::::::::: GETTERS ::::::::::::: // 
+
+    // Fonction pour récupérer les soldes par maturité
+    function getBalance(address user, uint256 maturityDate) external view returns (uint256) {
+        return userBalances[user][maturityDate];
+    }
+
+    // Fonction pour récupérer les détails de la stratégie
     function getActiveStrategy(address user, uint256 maturityDate) 
         external 
         view 
@@ -233,6 +249,8 @@ contract MockPendleRouter is Ownable {
             strategy.amount
         );
     }
+
+    // ::::::::::::: RESCUE FUNCTIONS ::::::::::::: // 
 
     // Fonction pour récupérer les PT non utilisés (en cas d'urgence)
     function rescuePT(address ptToken, uint256 amount) external onlyOwner {

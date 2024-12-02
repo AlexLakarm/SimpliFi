@@ -5,12 +5,19 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract PtgUSDC is ERC20, Ownable {
+
+    // ::::::::::::: CONSTANTS ::::::::::::: // 
+
     uint8 private constant _DECIMALS = 6;
-    
+
     // Mapping pour stocker les maturités par PT
     mapping(uint256 => bool) public maturities;
 
+    // ::::::::::::: CONSTRUCTOR ::::::::::::: // 
+
     constructor() ERC20("Principal Token gUSDC", "PT-gUSDC") Ownable(msg.sender) {}
+
+    // ::::::::::::: FUNCTIONS ::::::::::::: // 
 
     function decimals() public pure override returns (uint8) {
         return _DECIMALS;
