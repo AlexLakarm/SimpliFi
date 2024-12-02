@@ -60,3 +60,13 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Cache la scrollbar sur WebKit (Chrome, Safari) */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cache la scrollbar sur Firefox */
+.scrollbar-none {
+  scrollbar-width: none;
+}

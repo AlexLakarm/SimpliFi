@@ -1,22 +1,11 @@
 "use client"
 
-import { useRole } from "@/hooks/useRole";
-import { RoleAlert } from "@/components/shared/role-alert";
-import { useEffect } from "react";
 
-export default function DappPage() {
-  const roleState = useRole();
+
+export default function StrategyPage() {
   
-  useEffect(() => {
-    if (roleState.role) {
-      console.log('Role détecté :', {
-        role: roleState.role,
-        address: roleState.address,
-        hasRole: roleState.hasRole,
-        isConnected: roleState.isConnected
-      });
-    }
-  }, [roleState]);
   
-  return <RoleAlert roleState={roleState} />;
+  return <>
+  <h2>Strategy</h2>
+  </>;
 }

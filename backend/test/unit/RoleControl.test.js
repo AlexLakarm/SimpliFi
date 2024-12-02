@@ -125,6 +125,128 @@ describe("RoleControl Contract Tests", function () {
                     .to.be.revertedWith("CGP cannot be their own client");
             });
         });
+
+        describe("Delete Functions", function () {
+            it("Should allow DEFAULT_ADMIN to delete admin", async function () {
+                const { deployer, admin, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(deployer).deleteAdmin(admin.address);
+                expect(await roleControl.isAdmin(admin.address)).to.be.false;
+            });
+
+            it("Should emit AdminRemoved event", async function () {
+                const { deployer, admin, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await expect(roleControl.connect(deployer).deleteAdmin(admin.address))
+                    .to.emit(roleControl, "AdminRemoved")
+                    .withArgs(admin.address, deployer.address);
+            });
+
+            it("Should not allow admin to delete themselves", async function () {
+                const { deployer, roleControl } = await loadFixture(deployRoleControlFixture);
+                await expect(roleControl.connect(deployer).deleteAdmin(deployer.address))
+                    .to.be.revertedWith("Cannot remove self");
+            });
+
+            it("Should allow admin to delete CGP with no clients", async function () {
+                const { deployer, admin, cgp, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(admin).deleteCGP(cgp.address);
+                expect(await roleControl.isCGP(cgp.address)).to.be.false;
+            });
+
+            it("Should emit CGPRemoved event", async function () {
+                const { deployer, admin, cgp, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await expect(roleControl.connect(admin).deleteCGP(cgp.address))
+                    .to.emit(roleControl, "CGPRemoved")
+                    .withArgs(cgp.address, admin.address);
+            });
+
+            it("Should not allow deleting CGP with active clients", async function () {
+                const { deployer, admin, cgp, client, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(cgp).addClient(client.address);
+                await expect(roleControl.connect(admin).deleteCGP(cgp.address))
+                    .to.be.revertedWith("CGP still has clients");
+            });
+
+            it("Should allow CGP to delete their client", async function () {
+                const { deployer, admin, cgp, client, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(cgp).addClient(client.address);
+                await roleControl.connect(cgp).deleteClient(client.address);
+                expect(await roleControl.isClient(client.address)).to.be.false;
+            });
+
+            it("Should not allow CGP to delete another CGP's client", async function () {
+                const { deployer, admin, cgp, client, roleControl } = await loadFixture(deployRoleControlFixture);
+                const otherCGP = admin; // Using admin as another CGP for simplicity
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(admin).addCGP(otherCGP.address);
+                await roleControl.connect(cgp).addClient(client.address);
+                await expect(roleControl.connect(otherCGP).deleteClient(client.address))
+                    .to.be.revertedWith("Not client's CGP");
+            });
+        });
+
+        describe("New Getters", function () {
+            it("Should return all admins correctly", async function () {
+                const { deployer, admin, randomUser, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(deployer).addAdmin(randomUser.address);
+                
+                const admins = await roleControl.getAllAdmins();
+                expect(admins).to.have.lengthOf(3); // deployer + 2 new admins
+                expect(admins).to.include(deployer.address);
+                expect(admins).to.include(admin.address);
+                expect(admins).to.include(randomUser.address);
+            });
+
+            it("Should return all CGPs correctly", async function () {
+                const { deployer, admin, cgp, randomUser, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(admin).addCGP(randomUser.address);
+                
+                const cgps = await roleControl.getAllCGPs();
+                expect(cgps).to.have.lengthOf(2);
+                expect(cgps).to.include(cgp.address);
+                expect(cgps).to.include(randomUser.address);
+            });
+
+            it("Should return all clients with their CGPs", async function () {
+                const { deployer, admin, cgp, client, randomUser, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(cgp).addClient(client.address);
+                await roleControl.connect(cgp).addClient(randomUser.address);
+                
+                const allClients = await roleControl.getAllClients();
+                expect(allClients).to.have.lengthOf(2);
+                
+                const clientInfo = allClients.find(c => c.clientAddress === client.address);
+                expect(clientInfo.cgpAddress).to.equal(cgp.address);
+                expect(clientInfo.isActive).to.be.true;
+            });
+
+            it("Should handle deleted clients correctly in getAllClients", async function () {
+                const { deployer, admin, cgp, client, roleControl } = await loadFixture(deployRoleControlFixture);
+                await roleControl.connect(deployer).addAdmin(admin.address);
+                await roleControl.connect(admin).addCGP(cgp.address);
+                await roleControl.connect(cgp).addClient(client.address);
+                await roleControl.connect(cgp).deleteClient(client.address);
+                
+                const allClients = await roleControl.getAllClients();
+                const clientInfo = allClients.find(c => c.clientAddress === client.address);
+                expect(clientInfo.isActive).to.be.false;
+            });
+        });
     });
 
     // ::::::::::::: GETTERS TESTS ::::::::::::: //

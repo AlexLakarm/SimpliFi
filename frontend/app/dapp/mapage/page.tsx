@@ -2,26 +2,41 @@
 
 import { useRole } from "@/hooks/useRole";
 import { RoleAlert } from "@/components/shared/role-alert";
-import { useEffect } from "react";
+import { AdminPage } from "@/components/shared/admin-page";
+import { CGPPage } from "@/components/shared/cgp-page";
+import { ClientPage } from "@/components/shared/client-page";
 
-export default function DappPage() {
+export default function MaPage() {
   const roleState = useRole();
-  
-  useEffect(() => {
-    if (roleState.role) {
-      console.log('Role détecté :', {
-        role: roleState.role,
-        address: roleState.address,
-        hasRole: roleState.hasRole,
-        isConnected: roleState.isConnected
-      });
+  const { role, isConnected } = roleState;
+
+  // Afficher l'alerte de rôle
+  const alert = <RoleAlert roleState={roleState} />;
+
+  // Si pas connecté ou pas de rôle, on affiche juste l'alerte
+  if (!isConnected || !role || role === "NO_ROLE") {
+    return alert;
+  }
+
+  // Fonction pour obtenir le composant en fonction du rôle
+  const getPageComponent = () => {
+    switch (role) {
+      case "ADMIN":
+        return <AdminPage />;
+      case "CGP":
+        return <CGPPage />;
+      case "CLIENT":
+        return <ClientPage />;
+      default:
+        return null;
     }
-  }, [roleState]);
-  
+  };
+
   return (
     <>
-      <RoleAlert roleState={roleState} />
-      <h2 className="text-3xl font-bold mt-4 text-center text-white/80">Bienvenue sur votre page</h2>
+      <div className="mt-6">
+        {getPageComponent()}
+      </div>
     </>
   );
 }

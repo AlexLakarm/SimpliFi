@@ -5,8 +5,8 @@ export const contractAddresses = {
   oracle: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
   router: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
   roleControl: '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6',
-  strategyNFT: '0xc6e7DF5E7b4f2A278906862b61205850344D4e7d',
-  strategyOne: '0x59b670e9fA9D0A427751Af201D676719a970857b'
+  strategyNFT: '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',
+  strategyOne: '0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e'
 } as const;
 
 // ABIs des contrats
@@ -1017,17 +1017,34 @@ export const contractABIs = {
           "internalType": "address",
           "name": "_ptTokenAddress",
           "type": "address"
-        }
-      ],
-      "name": "getDuration",
-      "outputs": [
+        },
         {
           "internalType": "uint256",
-          "name": "",
+          "name": "_annualYieldPoints",
           "type": "uint256"
         }
       ],
-      "stateMutability": "view",
+      "name": "setRateAndPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_ptTokenAddress",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_duration",
+          "type": "uint256"
+        }
+      ],
+      "name": "setDuration",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -1069,6 +1086,25 @@ export const contractABIs = {
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_ptTokenAddress",
+          "type": "address"
+        }
+      ],
+      "name": "getDuration",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "owner",
       "outputs": [
@@ -1084,55 +1120,6 @@ export const contractABIs = {
     {
       "inputs": [],
       "name": "renounceOwnership",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_ptTokenAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_duration",
-          "type": "uint256"
-        }
-      ],
-      "name": "setDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_ptTokenAddress",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_annualYieldPoints",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRateAndPrice",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_ptTokenAddress",
-          "type": "address"
-        }
-      ],
-      "name": "setTestParameters",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -1773,6 +1760,25 @@ export const contractABIs = {
         {
           "indexed": true,
           "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "removedBy",
+          "type": "address"
+        }
+      ],
+      "name": "AdminRemoved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
           "name": "newCGP",
           "type": "address"
         },
@@ -1784,6 +1790,25 @@ export const contractABIs = {
         }
       ],
       "name": "CGPAdded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "cgp",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "removedBy",
+          "type": "address"
+        }
+      ],
+      "name": "CGPRemoved",
       "type": "event"
     },
     {
@@ -1969,6 +1994,101 @@ export const contractABIs = {
       "name": "addClient",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "name": "deleteAdmin",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "cgp",
+          "type": "address"
+        }
+      ],
+      "name": "deleteCGP",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "client",
+          "type": "address"
+        }
+      ],
+      "name": "deleteClient",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllAdmins",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "",
+          "type": "address[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllCGPs",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "",
+          "type": "address[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllClients",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "clientAddress",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "cgpAddress",
+              "type": "address"
+            },
+            {
+              "internalType": "bool",
+              "name": "isActive",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct RoleControl.ClientInfo[]",
+          "name": "",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -4011,6 +4131,81 @@ export const contractABIs = {
       ],
       "stateMutability": "view",
       "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "ptToken",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "yieldValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "setRateAndPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "ptToken",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "duration",
+          "type": "uint256"
+        }
+      ],
+      "name": "setDuration",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ] as const,
+
+  mockPendleFi: [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "ptToken",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "yieldValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "setRateAndPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "ptToken",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "duration",
+          "type": "uint256"
+        }
+      ],
+      "name": "setDuration",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
     }
   ] as const,
 } as const;
@@ -4045,7 +4240,7 @@ export const wagmiConfig = {
     {
       address: contractAddresses.strategyOne,
       abi: contractABIs.strategyOne,
-    },
+    }
   ],
 } as const;
 

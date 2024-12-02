@@ -41,18 +41,7 @@ export function RoleAlert({ roleState }: RoleAlertProps) {
   }
 
   return (
-    <div className="
-      fixed 
-      top-[60px] 
-      md:top-[72px] 
-      left-4 
-      w-[calc(100%-2rem)] 
-      sm:w-[500px] 
-      md:w-1/3
-      min-w-[300px] 
-      max-w-[600px]
-      z-40
-    ">
+    <div className="w-full">
       <Alert variant="default" className="
         bg-background/95 
         backdrop-blur-sm 
@@ -61,7 +50,6 @@ export function RoleAlert({ roleState }: RoleAlertProps) {
         md:py-2 
         px-3 
         md:px-4
-        mt-2
         shadow-lg
       ">
         <div className="flex items-center gap-1.5 md:gap-3">
