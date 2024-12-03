@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react";
-import { useReadContract, useAccount } from 'wagmi';
+import { useReadContract, useAccount, useWriteContract } from 'wagmi';
 import { contractAddresses, contractABIs } from "@/app/config/contracts";
 import { useRole } from "@/hooks/useRole";
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { Button } from "@/components/ui/button";
+import { useTransactionToast } from "@/hooks/use-transaction-toast";
 
 // Type pour les positions retournées par le contrat
 type Position = {
@@ -23,9 +25,25 @@ export function ClientPage() {
   const [isClient, setIsClient] = useState(false);
   const [positions, setPositions] = useState<Position[]>([]);
 
+  // Hook pour l'écriture du contrat
+  const { writeContract, data: hash, error, isPending } = useWriteContract();
+
+  // Hook pour les toasts de transaction
+  useTransactionToast(hash, error);
+
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Fonction pour sortir d'une stratégie
+  const handleExitStrategy = async (positionId: number) => {
+    writeContract({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      functionName: 'exitStrategy',
+      args: [BigInt(positionId)],
+    });
+  };
 
   // Lecture des positions de l'utilisateur
   const { data: userPositions } = useReadContract({
@@ -79,14 +97,18 @@ export function ClientPage() {
           positions.map((position, index) => (
             position.isActive && (
               <div key={index} className="p-6 bg-card rounded-lg border space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                   <div>
                     <h4 className="text-sm font-medium text-muted-foreground">Montant Initial</h4>
                     <p className="text-2xl font-bold">{formatAmount(position.gUSDCAmount)} gUSDC</p>
                   </div>
                   <div>
-                    <h4 className="text-sm font-medium text-muted-foreground">PT Reçus</h4>
-                    <p className="text-2xl font-bold">{formatAmount(position.ptAmount)} PT</p>
+                    <h4 className="text-sm font-medium text-muted-foreground">Montant à Maturité</h4>
+                    <p className="text-2xl font-bold">{formatAmount(position.ptAmount)} gUSDC</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground">Id NFT Reçu</h4>
+                    <p className="text-2xl font-bold">Id # {index + 1}</p>
                   </div>
                   <div>
                     <h4 className="text-sm font-medium text-muted-foreground">Date d&apos;Entrée</h4>
@@ -98,6 +120,23 @@ export function ClientPage() {
                     <p className="text-sm text-muted-foreground">
                       {getRemainingTime(position.maturityDate)}
                     </p>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        className="border-blue-900"
+                      >
+                        Mettre en vente
+                      </Button>
+                      <Button
+                        onClick={() => handleExitStrategy(index + 1)}
+                        disabled={isPending || Number(position.maturityDate) * 1000 > Date.now()}
+                        variant="destructive"
+                      >
+                        {isPending ? "Transaction en cours..." : "Sortir de la position"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>

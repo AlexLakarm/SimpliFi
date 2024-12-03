@@ -6,6 +6,62 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@property --border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.gradient-border {
+  --border-size: 2px;
+  --border-angle: 0turn;
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: var(--border-size);
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--border-size);
+  background: conic-gradient(
+    from var(--border-angle),
+    rgba(71, 85, 105, 0.48) 80%,
+    rgb(99, 102, 241) 86%,
+    rgb(165, 180, 252) 90%,
+    rgb(99, 102, 241) 94%,
+    rgba(71, 85, 105, 0.48)
+  );
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: bg-spin 7s linear infinite;
+  z-index: -1;
+}
+
+@keyframes bg-spin {
+  to {
+    --border-angle: 1turn;
+  }
+}
+
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 15px rgba(37,99,235,0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(37,99,235,0.3);
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(37,99,235,0.2);
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

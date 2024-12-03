@@ -109,13 +109,15 @@ export default function Home() {
                     Connecté avec : {address?.slice(0, 6)}...{address?.slice(-4)}
                   </p>
                   <Link href="/dapp" className="block">
-                    <Button 
-                      className="flex items-center gap-2 group text-lg py-6 px-8"
-                      variant="outline"
-                    >
-                      Accéder à SimpliFi
-                      <Rocket className="h-5 w-5 transition-transform duration-300 group-hover:scale-125" />
-                    </Button>
+                    <div className="gradient-border inline-block rounded-md bg-gradient-to-r from-[#24252A] to-[#2A2C32] hover:from-[#2A2C32] hover:to-[#24252A]">
+                      <Button 
+                        className="flex items-center gap-2 group text-lg py-6 px-8 rounded-[5px] bg-background hover:bg-background/90 border-none"
+                        variant="outline"
+                      >
+                        Accéder à SimpliFi
+                        <Rocket className="h-5 w-5 transition-transform duration-300 group-hover:scale-125" />
+                      </Button>
+                    </div>
                   </Link>
                 </div>
               ) : (

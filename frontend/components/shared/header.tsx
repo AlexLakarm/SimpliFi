@@ -79,7 +79,7 @@ const Header = () => {
                                                     group overflow-hidden transition-all duration-300
                                                     hover:scale-105"
                                                 >
-                                                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-yellow-500 to-red-500 opacity-75 group-hover:opacity-100 transition-opacity duration-300"></span>
+                                                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-blue-600 to-purple-600 opacity-75 group-hover:opacity-100 transition-opacity duration-300"></span>
                                                     <span className="absolute inset-[1px] bg-white dark:bg-gray-800 rounded-lg"></span>
                                                     <span className="relative z-10 font-medium text-black dark:text-white transition-colors duration-300">
                                                         Connect Wallet
@@ -104,7 +104,7 @@ const Header = () => {
                                                     group overflow-hidden transition-all duration-300
                                                     hover:scale-105"
                                                 >
-                                                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-yellow-500 to-red-500 opacity-75 group-hover:opacity-100 transition-opacity duration-300"></span>
+                                                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-blue-600 to-purple-600 opacity-75 group-hover:opacity-100 transition-opacity duration-300"></span>
                                                     <span className="absolute inset-[1px] bg-white dark:bg-gray-800 rounded-lg"></span>
                                                     <span className="relative z-10 font-medium text-black dark:text-white transition-colors duration-300">
                                                         {account.displayName}

@@ -10,13 +10,14 @@ import { useRole } from "@/hooks/useRole";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
 
 const PendlePage = () => {
-    const { role } = useRole();
+    const { role } = useRole(); // hook personnalisé pour gérer les rôles
+    // States
     const [isClient, setIsClient] = useState(false);
     const [ptTokenAddress, setPtTokenAddress] = useState('');
     const [yieldValue, setYieldValue] = useState('');
     const [duration, setDuration] = useState('');
 
-    // États pour les valeurs lues
+    // États pour les valeurs lues dans le contrat mock oracle
     const [ptRate, setPtRate] = useState<string>('');
     const [currentYield, setCurrentYield] = useState<string>('');
     const [currentDuration, setCurrentDuration] = useState<string>('');
@@ -25,10 +26,10 @@ const PendlePage = () => {
         setIsClient(true);
     }, []);
 
-    // Écriture du contrat
+    // Écriture du contrat avec hook wagmi
     const { writeContract, data: hash, error, isPending } = useWriteContract();
 
-    // Lecture des valeurs
+    // Lecture des valeurs dans le contrat mock oracle avec hook wagmi
     const { data: ptRateData, refetch: refetchPtRate } = useReadContract({
         address: contractAddresses.oracle,
         abi: contractABIs.oracle,
@@ -43,7 +44,7 @@ const PendlePage = () => {
         address: contractAddresses.oracle,
         abi: contractABIs.oracle,
         functionName: 'getYield',
-        args: ptTokenAddress && isAddress(ptTokenAddress) ? [ptTokenAddress as `0x${string}`] : undefined,
+        args: ptTokenAddress && isAddress(ptTokenAddress) ? [ptTokenAddress as `0x${string}`] : undefined, // args pour la fonction getYield
         query: {
             enabled: Boolean(ptTokenAddress && isAddress(ptTokenAddress))
         }
@@ -59,7 +60,7 @@ const PendlePage = () => {
         }
     });
 
-    // Utilisation du hook de toast pour suivre la transaction
+    // Utilisation du hook de toast perso pour suivre la transaction
     const { isSuccess } = useTransactionToast(hash, error);
 
     // Fonction pour gérer setRateAndPrice
