@@ -61,36 +61,32 @@ export default function DappLayout({
             md:w-1/3 
             order-1 
             md:order-2
-            overflow-x-auto    /* Permet le scroll horizontal */
-            scrollbar-none     /* Cache la scrollbar sur desktop */
-            -mx-4             /* Étend la zone de scroll jusqu'aux bords */
-            px-4              /* Restaure le padding interne */
+            overflow-x-auto
+            scrollbar-none
           ">
             <Card className="
-              p-0.5 
-              md:p-1 
+              p-0.5
               bg-background/95 
               backdrop-blur-sm 
               border-white/40
-              inline-block     /* Permet au conteneur de s'adapter à la largeur du contenu */
-              min-w-full      /* Force la largeur minimale à 100% */
+              w-full
             ">
               <nav className="
-                flex 
-                gap-0.5 
-                sm:gap-1
-                justify-start  /* Aligne les éléments à gauche */
-                w-fit         /* Permet au nav de s'étendre selon le contenu */
+                grid
+                grid-cols-4
+                gap-0.5
+                w-full
               ">
                 {menuItems.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "px-2 sm:px-3 md:px-4 py-1.5 md:py-2",  /* Réduit le padding sur mobile */
-                      "text-xs sm:text-sm md:text-base",       /* Réduit la taille du texte sur mobile */
-                      "whitespace-nowrap",                     /* Empêche le retour à la ligne du texte */
-                      "rounded-md transition-colors duration-200",
+                      "px-0.5 sm:px-2 md:px-4 py-1 md:py-2",
+                      "text-[9px] sm:text-sm md:text-base",
+                      "whitespace-nowrap",
+                      "text-center",
+                      "rounded-sm md:rounded-md transition-colors duration-200",
                       "hover:bg-accent hover:text-accent-foreground",
                       pathname === item.href
                         ? "bg-secondary text-secondary-foreground"

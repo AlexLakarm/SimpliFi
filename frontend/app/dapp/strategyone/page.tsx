@@ -86,12 +86,11 @@ const StrategyOnePage = () => {
     return (
         <>
             {/* Conteneur pour le bouton retour et le bouton retour vers la page d'accueil */}
-            {/* Bouton retour vers la page d'accueil */}
-            <div className="container mx-auto p-4 flex justify-start gap-4">
+            <div className="container mx-auto p-4 flex flex-col sm:flex-row gap-4">
                 <Link href="/dapp">
                     <Button 
                         variant="secondary" 
-                        className="flex items-center gap-2 group mb-8 hover:bg-accent"
+                        className="w-full sm:w-auto flex items-center gap-2 group hover:bg-accent"
                     >
                         <ArrowLeft className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-1" />
                         Vers Stratégies
@@ -101,7 +100,7 @@ const StrategyOnePage = () => {
                 <Link href="/learn/swap">
                     <Button 
                         variant="outline"
-                        className="flex items-center gap-2 group mb-8 hover:bg-accent border-green-600"
+                        className="w-full sm:w-auto flex items-center gap-2 group hover:bg-accent border-green-600"
                     >
                         <BookText className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-1" />
                         Comment obtenir des gUSDC ?
@@ -131,18 +130,19 @@ const StrategyOnePage = () => {
             )}
             <div className="container mx-auto p-4">
                 <Input 
-                    className="mb-4 w-1/4" 
+                    className="mb-8 w-full md:w-1/4" 
                     type="number" 
                     value={amount} 
                     onChange={(e) => setAmount(e.target.value)} 
                     placeholder="Entrer un montant en gUSDC" 
                     disabled={role !== "CLIENT"}
                 />
-                <div className="space-x-4">
+                <div className="flex flex-col sm:flex-row gap-4">
                     <Button 
                         onClick={handleApprove}
                         disabled={role !== "CLIENT"}
                         variant={role === "CLIENT" ? "outline" : "secondary"}
+                        className="w-full sm:w-auto"
                     >
                         {isPending ? "Approbation en cours..." : "1. Approuver les gUSDC"}
                     </Button>
@@ -150,13 +150,14 @@ const StrategyOnePage = () => {
                         onClick={handleEnterStrategy}
                         disabled={role !== "CLIENT"}
                         variant={role === "CLIENT" ? "default" : "secondary"}
+                        className="w-full sm:w-auto"
                     >
                         {isPending ? "Transaction en cours..." : "2. Entrer dans la stratégie"}
                     </Button>
                     <Link href="/dapp/mapage">
                         <Button 
                             variant="outline"
-                            className="border-green-600"
+                            className="w-full sm:w-auto border-green-600"
                         >
                             3. Voir ma position
                         </Button>
