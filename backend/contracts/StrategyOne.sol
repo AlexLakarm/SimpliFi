@@ -3,34 +3,37 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // ::::::::::::: INTERFACES ::::::::::::: // 
 
+/// @title IRoleControl
+/// @notice Interface pour la gestion des rôles
 interface IRoleControl {
     function getClientCGP(address client) external view returns (address);
     function isAdmin(address account) external view returns (bool);
     function isCGP(address account) external view returns (bool);
     function isClient(address account) external view returns (bool);
-    function getRoles(address account) external view returns (string memory);
-    function addAdmin(address newAdmin) external;
-    function addCGP(address newCGP) external;
-    function addClient(address newClient) external;
 }
 
+/// @title IMockPendleRouter
+/// @notice Interface simplifiée pour le router
 interface IMockPendleRouter {
-    function swapExactTokenForPt(address tokenAddress, uint256 amount) external returns (uint256 ptReceived);
-    function redeemPyToToken(address tokenAddress, uint256 maturityDate) external;
-    function getActiveStrategy(address user, uint256 maturityDate) external view returns (uint256, uint256, uint256, uint256);
     function gUSDC() external view returns (address);
     function PTgUSDC() external view returns (address);
+    function swapExactTokenForPt(address tokenIn, uint256 amountIn) external returns (uint256);
+    function redeemPyToToken(address ptToken, uint256 amountIn) external returns (uint256);
 }
 
+/// @title IMockPendleOracle
+/// @notice Interface pour l'oracle Pendle
 interface IMockPendleOracle {
-    function getPTRate(address token) external view returns (uint256);
-    function getYield(address token) external view returns (uint256);
-    function getDuration(address token) external view returns (uint256);
+    function getDuration(address ptToken) external view returns (uint256);
+    function getYield(address ptToken) external view returns (uint256);
 }
 
+/// @title IStrategyNFT
+/// @notice Interface pour le contrat de NFTs
 interface IStrategyNFT {
     function mintStrategyNFT(
         address to,
@@ -40,84 +43,166 @@ interface IStrategyNFT {
     ) external returns (uint256);
 
     function burn(uint256 positionId) external;
-
     function ownerOf(uint256 positionId) external view returns (address);
-
     function transferFrom(address from, address to, uint256 tokenId) external;
 }
 
-// ::::::::::::: STRATEGY ONE SMART CONTRACT ::::::::::::: // 
-
-contract StrategyOne {
+/// @title StrategyOne
+/// @notice Contrat principal pour la gestion des stratégies d'investissement
+/// @dev Implémente la logique de gestion des positions, NFTs et frais
+contract StrategyOne is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // Adresses des contrats Mock Pendle
+    // ::::::::::::: STATE VARIABLES ::::::::::::: //
+
+    /// @notice Adresse du router pour les opérations de swap
     address public immutable router;
+    /// @notice Adresse de l'oracle pour les prix
     address public immutable oracle;
+    /// @notice Adresse du contrat de gestion des rôles
     address public immutable roleControl;
+    /// @notice Adresse du contrat NFT
     address public immutable nftContract;
-
-    // Variables d'état pour les frais
+    /// @notice Points de frais pour le protocole (1 point = 0.01%)
     uint256 public protocolFeePoints;
+    /// @notice Points de frais pour le CGP (1 point = 0.01%)
     uint256 public cgpFeePoints;       
+    /// @notice Nombre total de positions actives
+    uint256 private allActivePositionsCount;
 
-    // ::::::::::::: STRUCTS ::::::::::::: // 
+    // ::::::::::::: STRUCTS ::::::::::::: //
 
-    // Structure pour stocker les positions des utilisateurs
+    /// @notice Structure représentant une position d'investissement
+    /// @param gUSDCAmount Montant initial en gUSDC
+    /// @param ptAmount Montant de PT reçus
+    /// @param entryDate Date d'entrée dans la position
+    /// @param maturityDate Date de maturité de la position
+    /// @param exitDate Date de sortie de la position
+    /// @param isActive Indique si la position est active
+    /// @param allPositionsId ID global unique de la position
+    /// @param owner Adresse du propriétaire de la position
     struct Position {
-        uint256 gUSDCAmount;    // Montant initial en gUSDC
-        uint256 ptAmount;       // Montant de PT reçus
-        uint256 entryDate;      // Date d'entrée
-        uint256 maturityDate;   // Date de maturité
-        uint256 exitDate;       // Date de sortie
-        bool isActive;          // Position active
+        uint256 gUSDCAmount;
+        uint256 ptAmount;
+        uint256 entryDate;
+        uint256 maturityDate;
+        uint256 exitDate;
+        bool isActive;
+        uint256 allPositionsId;
+        address owner;
     }
 
+    /// @notice Structure pour le calcul des rendements
+    /// @param totalYield Rendement total de la position
+    /// @param protocolYield Part du rendement pour le protocole
+    /// @param cgpYield Part du rendement pour le CGP
+    /// @param clientYield Part du rendement pour le client
     struct PositionYield {
-        uint256 totalYield;     // Yield total
-        uint256 protocolYield;  // Yield protocole
-        uint256 cgpYield;       // Yield CGP
-        uint256 clientYield;    // Yield client
+        uint256 totalYield;
+        uint256 protocolYield;
+        uint256 cgpYield;
+        uint256 clientYield;
     }
 
-    struct PositionMarket {
-        bool isOnSale;          // En vente
-        uint256 salePrice;      // Prix de vente
-    }
-
-    // Struct pour stocker les frais en fonction de leur statut
+    /// @notice Structure pour la gestion des frais
+    /// @param nonMaturedFees Frais des positions non arrivées à maturité
+    /// @param maturedNonWithdrawnFees Frais des positions matures non retirés
+    /// @param withdrawnFees Total des frais déjà retirés
     struct Fees {
-        uint256 nonMaturedFees;           // Frais des stratégies non arrivées à maturité
-        uint256 maturedNonWithdrawnFees;  // Frais des stratégies matures mais non retirés
-        uint256 withdrawnFees;            // Total des frais retirés
+        uint256 nonMaturedFees;
+        uint256 maturedNonWithdrawnFees;
+        uint256 withdrawnFees;
     }
 
-    // Struct pour le marché NFT
+    /// @notice Structure pour la gestion des ventes de NFT
+    /// @param salePrice Prix de vente en gUSDC
+    /// @param isOnSale Indique si le NFT est en vente
     struct NFTSale {
         uint256 salePrice;
         bool isOnSale;
     }
 
-    // ::::::::::::: MAPPINGS ::::::::::::: // 
+    // ::::::::::::: MAPPINGS ::::::::::::: //
 
-    // Mappings pour suivre les positions des utilisateurs
-    mapping(address => Position[]) public positions;
+    /// @notice Positions de chaque utilisateur
+    mapping(address => Position[]) public userPositions;
+    /// @notice Rendements de chaque position par utilisateur
     mapping(address => PositionYield[]) public yields;
-    mapping(address => PositionMarket[]) public markets;
-    mapping(address => uint256) public positionCount;
-
-    // Mapping pour stocker les frais du protocole et des CGP
+    /// @notice Nombre de positions actives par utilisateur
+    mapping(address => uint256) public userPositionCount;
+    /// @notice Mapping global des positions par ID
+    mapping(uint256 => Position) public allPositions;
+    /// @notice Informations de vente pour chaque NFT, indexé par allPositionsId
+    /// @dev La clé est allPositionsId (et non pas NFTid qui serait allPositionsId + 1)
+    mapping(uint256 => NFTSale) public nftSales;
+    /// @notice Frais du protocole
     Fees public protocolFees;
+    /// @notice Frais par CGP
     mapping(address => Fees) public cgpFees;
 
-    // Mapping pour stocker les infos de vente des NFTs
-    mapping(uint256 => NFTSale) public nftSales;
-    
-    // ::::::::::::: EVENTS ::::::::::::: // 
+    // ::::::::::::: EVENTS ::::::::::::: //
 
-    // Event pour la mise en vente
-    event StrategyEntered(address indexed user, uint256 positionId, uint256 amount, uint256 ptReceived, uint256 entryDate, uint256 maturityDate);
-    event StrategyExited(address indexed user, uint256 positionId, uint256 initialAmount, uint256 finalAmount, uint256 yieldEarned, uint256 exitDate);
+    // :::: STRATEGY EVENTS :::: //
+
+    /// @notice Émis lorsqu'une nouvelle position est créée
+    /// @param user Adresse de l'utilisateur
+    /// @param NFTid ID du NFT
+    /// @param amount Montant investi en gUSDC
+    /// @param ptReceived Montant de PT reçus
+    /// @param entryDate Date d'entrée
+    /// @param maturityDate Date de maturité
+    event StrategyEntered(
+        address indexed user,
+        uint256 indexed NFTid,
+        uint256 amount,
+        uint256 ptReceived,
+        uint256 entryDate,
+        uint256 maturityDate
+    );
+
+    /// @notice Émis lorsqu'une position est fermée
+    /// @param user Adresse de l'utilisateur
+    /// @param NFTid ID du NFT
+    /// @param initialAmount Montant initial investi
+    /// @param finalAmount Montant final reçu
+    /// @param yieldEarned Rendement gagné
+    /// @param exitDate Date de sortie
+    event StrategyExited(
+        address indexed user,
+        uint256 indexed NFTid,
+        uint256 initialAmount,
+        uint256 finalAmount,
+        uint256 yieldEarned,
+        uint256 exitDate
+    );
+
+    // :::: NFT EVENTS :::: //
+
+    /// @notice Émis lorsqu'un NFT est mis en vente
+    event NFTListedForSale(
+        uint256 indexed NFTid,
+        uint256 allPositionsId,
+        uint256 price,
+        address seller
+    );
+
+    /// @notice Émis lorsqu'un NFT est vendu
+    event NFTSold(
+        uint256 indexed NFTid,
+        uint256 allPositionsId,
+        address seller,
+        address buyer,
+        uint256 price
+    );
+
+    /// @notice Émis lorsqu'une vente est annulée
+    event NFTSaleCanceled(
+        uint256 indexed NFTid,
+        uint256 allPositionsId,
+        address seller
+    );
+
+    /// @notice Émis lorsque des frais sont collectés
     event FeesCollected(
         address indexed cgp,
         uint256 cgpAmount,
@@ -126,24 +211,30 @@ contract StrategyOne {
         uint256 timestamp
     );
 
+    // :::: FEES EVENTS :::: //
+
+    /// @notice Émis lorsque les frais en attente sont mis à jour
     event PendingFeesUpdated(
         address indexed cgp,
         uint256 cgpPendingFees,
         uint256 protocolPendingFees
     );
 
+    /// @notice Émis lorsque les frais du protocole sont retirés
     event ProtocolFeesWithdrawn(
         address indexed admin,
         uint256 amount,
         uint256 timestamp
     );
 
+    /// @notice Émis lorsque les frais d'un CGP sont retirés
     event CGPFeesWithdrawn(
         address indexed cgp,
         uint256 amount,
         uint256 timestamp
     );
 
+    /// @notice Émis lorsque les points de frais sont mis à jour
     event FeePointsUpdated(
         uint256 oldProtocolFeePoints,
         uint256 newProtocolFeePoints,
@@ -152,75 +243,71 @@ contract StrategyOne {
         uint256 timestamp
     );
 
-    event NFTListedForSale(uint256 indexed positionId, uint256 price, address seller);
-    event NFTSold(uint256 indexed positionId, address seller, address buyer, uint256 price);
+    // ::::::::::::: MODIFIERS ::::::::::::: //
 
+    /// @notice Restreint l'accès aux administrateurs
+    modifier onlyAdmin() {
+        require(IRoleControl(roleControl).isAdmin(msg.sender), "Caller is not an admin");
+        _;
+    }
+
+    /// @notice Restreint l'accès aux CGPs
+    modifier onlyCGP() {
+        require(IRoleControl(roleControl).isCGP(msg.sender), "Caller is not a CGP");
+        _;
+    }
+
+    /// @notice Restreint l'accès aux clients
+    modifier onlyClient() {
+        require(IRoleControl(roleControl).isClient(msg.sender), "Caller is not a client");
+        _;
+    }
 
     // ::::::::::::: CONSTRUCTOR ::::::::::::: // 
 
+    /// @notice Initialise le contrat avec les adresses nécessaires
+    /// @param _router Adresse du router
+    /// @param _oracle Adresse de l'oracle
+    /// @param _roleControl Adresse du contrat de gestion des rôles
+    /// @param _nftContract Adresse du contrat NFT
     constructor(
         address _router,
         address _oracle,
         address _roleControl,
         address _nftContract
     ) {
+        require(_router != address(0), "Invalid router address");
+        require(_oracle != address(0), "Invalid oracle address");
+        require(_roleControl != address(0), "Invalid role control address");
+        require(_nftContract != address(0), "Invalid NFT contract address");
+        
         router = _router;
         oracle = _oracle;
         roleControl = _roleControl;
         nftContract = _nftContract;
         protocolFeePoints = 1;
         cgpFeePoints = 1;
-    }
-
-    // ::::::::::::: MODIFIERS ::::::::::::: // 
-
-    modifier onlyAdmin() {
-        require(IRoleControl(roleControl).isAdmin(msg.sender), "Caller is not an admin");
-        _;
-    }
-
-    modifier onlyCGP() {
-        require(IRoleControl(roleControl).isCGP(msg.sender), "Caller is not a CGP");
-        _;
-    }
-
-    modifier onlyClient() {
-        require(IRoleControl(roleControl).isClient(msg.sender), "Caller is not a client");
-        _;
+        allActivePositionsCount = 0;
     }
 
     // ::::::::::::: SMART CONTRACT FUNCTIONS ::::::::::::: // 
 
-    // Fonction pour obtenir les détails de la stratégie actuelle
-    function getStrategyDetails() external view returns (
-        address underlyingToken,
-        uint256 currentYield,
-        uint256 duration,
-        uint256 rate
-    ) {
-        IMockPendleOracle pendleOracle = IMockPendleOracle(oracle);
-        underlyingToken = IMockPendleRouter(router).gUSDC();
-        address ptToken = IMockPendleRouter(router).PTgUSDC();
-        currentYield = pendleOracle.getYield(ptToken);
-        duration = pendleOracle.getDuration(ptToken);
-        rate = pendleOracle.getPTRate(ptToken);
-        return (underlyingToken, currentYield, duration, rate);
-    }
-
-    // ::::::::::::: NEW STRATEGY ::::::::::::: // 
-
-    function enterStrategy(uint256 amount) external onlyClient {
+    /// @notice Crée une nouvelle position d'investissement
+    /// @param amount Montant en gUSDC à investir
+    /// @dev Protégé contre la réentrance
+    function enterStrategy(uint256 amount) external nonReentrant onlyClient {
         require(amount > 0, "Amount must be greater than 0");
         
-        // Récupérer le CGP du client via l'interface
         address clientCGP = IRoleControl(roleControl).getClientCGP(msg.sender);
         require(clientCGP != address(0), "Client has no CGP");
 
-        // Créer la position et émettre l'événement dans une fonction séparée
         _createPosition(amount, clientCGP);
     }
 
-    // Fonction interne pour créer la position
+    /// @notice Fonction interne pour créer une position
+    /// @param amount Montant en gUSDC à investir
+    /// @param clientCGP Adresse du CGP du client
+    /// @dev Gère la création de la position et l'émission du NFT
     function _createPosition(uint256 amount, address clientCGP) internal {
         address underlyingToken = IMockPendleRouter(router).gUSDC();
         address ptToken = IMockPendleRouter(router).PTgUSDC();
@@ -245,6 +332,7 @@ contract StrategyOne {
         // ::: CREATION DE LA POSITION ::: // 
 
         uint256 maturityDate = block.timestamp + IMockPendleOracle(oracle).getDuration(ptToken);
+        uint256 currentAllPositionsId = allActivePositionsCount++;
 
         Position memory newPosition = Position({
             gUSDCAmount: amount,
@@ -252,13 +340,15 @@ contract StrategyOne {
             entryDate: block.timestamp,
             maturityDate: maturityDate,
             exitDate: 0,
-            isActive: true
+            isActive: true,
+            allPositionsId: currentAllPositionsId,
+            owner: msg.sender
         });
 
-        // Ajouter la position
-        positions[msg.sender].push(newPosition);
-        uint256 positionId = positions[msg.sender].length - 1;
-        positionCount[msg.sender]++;
+        // Ajouter la position aux deux mappings
+        userPositions[msg.sender].push(newPosition);
+        allPositions[currentAllPositionsId] = newPosition;
+        userPositionCount[msg.sender]++;
 
         // Ajouter les données de yield
         yields[msg.sender].push(PositionYield({
@@ -268,26 +358,29 @@ contract StrategyOne {
             clientYield: yieldAmount - protocolFeesAmount - cgpFeesAmount
         }));
 
-        // Ajouter les données de market
-        markets[msg.sender].push(PositionMarket({
-            isOnSale: false,
-            salePrice: 0
-        }));
-
-        // ::: NFT MINT ::: // 
-
-        // Mint du NFT avec les détails initiaux de la stratégie
-        IStrategyNFT(nftContract).mintStrategyNFT(
-            msg.sender,                    // owner du NFT
-            amount,                        // montant initial
-            IMockPendleOracle(oracle).getDuration(ptToken),  // durée
-            positions[msg.sender].length - 1  // ID de la stratégie
+        // Mint du NFT
+        uint256 NFTid = IStrategyNFT(nftContract).mintStrategyNFT(
+            msg.sender,
+            amount,
+            IMockPendleOracle(oracle).getDuration(ptToken),
+            currentAllPositionsId
         );
 
-        emit StrategyEntered(msg.sender, positionId, amount, ptReceived, block.timestamp, maturityDate);
+        emit StrategyEntered(
+            msg.sender,
+            NFTid,
+            amount,
+            ptReceived,
+            block.timestamp,
+            maturityDate
+        );
     }
 
-    // Fonction interne pour calculer les frais
+    /// @notice Calcule les frais pour une position
+    /// @param amount Montant initial de la position
+    /// @return yieldAmount Montant total du yield
+    /// @return protocolFeesAmount Frais pour le protocole
+    /// @return cgpFeesAmount Frais pour le CGP
     function _calculateFees(uint256 amount, address ptToken) internal view returns (
         uint256 yieldAmount,
         uint256 protocolFeesAmount,
@@ -296,7 +389,7 @@ contract StrategyOne {
         uint256 yield = IMockPendleOracle(oracle).getYield(ptToken);  // ex: 10 pour 10%
         uint256 duration = IMockPendleOracle(oracle).getDuration(ptToken);  // en secondes
         
-        // Pour éviter l'overflow, on fait les calculs en plusieurs étapes
+     
         // 1. Calculer le yield annuel en points de base (1 point = 0.01%)
         uint256 annualYieldBps = yield * 100;  // 10% -> 1000 bps
         
@@ -317,9 +410,12 @@ contract StrategyOne {
 
     // ::::::::::::: EXIT STRATEGY ::::::::::::: // 
 
-    function exitStrategy(uint256 positionId) external onlyClient {
-        require(positionId < positions[msg.sender].length, "Invalid position ID");
-        Position storage position = positions[msg.sender][positionId];
+    /// @notice Permet de sortir d'une position à maturité
+    /// @param allPositionsId ID global de la position
+    /// @dev Protégé contre la réentrance
+    function exitStrategy(uint256 allPositionsId) external nonReentrant onlyClient {
+        Position storage position = allPositions[allPositionsId];
+        require(position.owner == msg.sender, "Not position owner");
         require(position.isActive, "Position not active");
         require(block.timestamp >= position.maturityDate, "Strategy not yet mature");
 
@@ -341,7 +437,17 @@ contract StrategyOne {
 
         // Récupérer le CGP du client et les frais calculés à l'entrée
         address clientCGP = IRoleControl(roleControl).getClientCGP(msg.sender);
-        PositionYield storage positionYield = yields[msg.sender][positionId];
+        
+        // Trouver l'index de la position dans userPositions
+        uint256 userPositionId;
+        for (uint256 i = 0; i < userPositions[msg.sender].length; i++) {
+            if (userPositions[msg.sender][i].allPositionsId == allPositionsId) {
+                userPositionId = i;
+                break;
+            }
+        }
+        
+        PositionYield storage positionYield = yields[msg.sender][userPositionId];
         
         // Mettre à jour les frais
         protocolFees.maturedNonWithdrawnFees += positionYield.protocolYield;
@@ -359,14 +465,16 @@ contract StrategyOne {
         // Mise à jour de la position
         position.isActive = false;
         position.exitDate = block.timestamp;
-        positionCount[msg.sender]--;
+        userPositionCount[msg.sender]--;
+        allActivePositionsCount--;
 
-        // Burn du NFT avec l'ID correct (positionId + 1)
-        IStrategyNFT(nftContract).burn(positionId + 1);
+        // L'ID du NFT est toujours allPositionsId + 1
+        uint256 NFTid = allPositionsId + 1;
+        IStrategyNFT(nftContract).burn(NFTid);
 
         emit StrategyExited(
-            msg.sender, 
-            positionId, 
+            msg.sender,
+            NFTid,
             position.gUSDCAmount,
             position.ptAmount,
             positionYield.totalYield,
@@ -380,28 +488,6 @@ contract StrategyOne {
             positionYield.totalYield,
             block.timestamp
         );
-    }
-
-    // ::::::::::::: GETTERS POSITIONS ::::::::::::: // 
-
-    // Fonction pour voir toutes les positions d'un utilisateur
-    function getUserPositions(address user) external view returns (Position[] memory) {
-        return positions[user];
-    }
-
-    // Fonction pour voir une position spécifique
-    function getUserPosition(address user, uint256 positionId) external view returns (Position memory) {
-        require(positionId < positions[user].length, "Invalid position ID");
-        return positions[user][positionId];
-    }
-
-    // Getters pour les frais
-    function getCGPFees(address cgp) external view returns (Fees memory) {
-        return cgpFees[cgp];
-    }
-
-    function getProtocolFees() external view returns (Fees memory) {
-        return protocolFees;
     }
 
     // ::::::::::::: FEES WITHDRAW AND MANAGEMENT ::::::::::::: // 
@@ -462,56 +548,148 @@ contract StrategyOne {
 
     // ::::::::::::: NFT MARKET ::::::::::::: // 
 
-    // Fonction pour mettre en vente un NFT
-    function listNFTForSale(uint256 positionId, uint256 price) external {
+    /// @notice Met en vente un NFT
+    /// @param allPositionsId ID global de la position
+    /// @param price Prix de vente en gUSDC
+    /// @dev Protégé contre la réentrance
+    function listNFTForSale(uint256 allPositionsId, uint256 price) external nonReentrant {
         require(price > 0, "Price must be greater than 0");
-        require(positionId < positions[msg.sender].length, "Invalid position ID");
-        Position storage position = positions[msg.sender][positionId];
+        
+        Position storage position = allPositions[allPositionsId];
+        require(position.owner == msg.sender, "Not position owner");
         require(position.isActive, "Position not active");
 
-        // Vérifier que l'utilisateur possède bien le NFT
-        require(IStrategyNFT(nftContract).ownerOf(positionId) == msg.sender, "Not NFT owner");
+        uint256 NFTid = allPositionsId + 1;
+        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not NFT owner");
 
-        nftSales[positionId] = NFTSale({
+        nftSales[allPositionsId] = NFTSale({
             salePrice: price,
             isOnSale: true
         });
 
-        emit NFTListedForSale(positionId, price, msg.sender);
+        emit NFTListedForSale(NFTid, allPositionsId, price, msg.sender);
     }
 
-    // Fonction pour acheter un NFT
-    function buyNFT(uint256 positionId) external {
-        NFTSale storage sale = nftSales[positionId];
+    /// @notice Annule la vente d'un NFT
+    /// @param allPositionsId ID global de la position
+    /// @dev Protégé contre la réentrance
+    function cancelNFTSale(uint256 allPositionsId) external nonReentrant {
+        Position storage position = allPositions[allPositionsId];
+        require(position.owner == msg.sender, "Not position owner");
+        require(position.isActive, "Position not active");
+
+        uint256 NFTid = allPositionsId + 1;
+        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not NFT owner");
+
+        delete nftSales[allPositionsId];
+        emit NFTSaleCanceled(NFTid, allPositionsId, msg.sender);
+    }
+
+    /// @notice Achète un NFT en vente
+    /// @param allPositionsId ID global de la position
+    /// @dev Protégé contre la réentrance et suit le pattern checks-effects-interactions
+    function buyNFT(uint256 allPositionsId) external nonReentrant {
+        NFTSale memory sale = nftSales[allPositionsId];
         require(sale.isOnSale, "NFT not for sale");
+
+        Position storage position = allPositions[allPositionsId];
+        require(position.isActive, "Position not active");
+
+        uint256 NFTid = allPositionsId + 1;
+        address nftOwner = IStrategyNFT(nftContract).ownerOf(NFTid);
+        require(nftOwner != msg.sender, "Cannot buy your own NFT");
+
+        // Transférer d'abord les gUSDC
+        IERC20 gUSDC = IERC20(IMockPendleRouter(router).gUSDC());
+        require(gUSDC.transferFrom(msg.sender, nftOwner, sale.salePrice), "gUSDC transfer failed");
+
+        // Puis transférer le NFT
+        IStrategyNFT(nftContract).transferFrom(nftOwner, msg.sender, NFTid);
+
+        // Mettre à jour le propriétaire dans allPositions
+        position.owner = msg.sender;
+
+        // Mettre à jour userPositions
+        // Retirer la position de l'ancien propriétaire
+        Position[] storage oldOwnerPositions = userPositions[nftOwner];
+        for (uint i = 0; i < oldOwnerPositions.length; i++) {
+            if (oldOwnerPositions[i].allPositionsId == allPositionsId) {
+                // Remplacer avec la dernière position et réduire la longueur
+                oldOwnerPositions[i] = oldOwnerPositions[oldOwnerPositions.length - 1];
+                oldOwnerPositions.pop();
+                break;
+            }
+        }
+
+        // Ajouter la position au nouveau propriétaire
+        userPositions[msg.sender].push(position);
+
+        delete nftSales[allPositionsId];
+        emit NFTSold(NFTid, allPositionsId, nftOwner, msg.sender, sale.salePrice);
+    }
+
+    // ::::::::::::: GETTERS ::::::::::::: //
+
+    /// @notice Retourne les statistiques du protocole
+    /// @return totalActivePositions Nombre total de positions actives
+    /// @return totalPositionsOnSale Nombre total de positions en vente
+    /// @return protocolPendingFees Frais en attente pour le protocole
+    /// @return protocolWithdrawnFees Frais déjà retirés par le protocole
+    function getProtocolStats() external view returns (
+        uint256 totalActivePositions,
+        uint256 totalPositionsOnSale,
+        uint256 protocolPendingFees,
+        uint256 protocolWithdrawnFees
+    ) {
+        totalActivePositions = allActivePositionsCount;
         
-        address seller = IStrategyNFT(nftContract).ownerOf(positionId);
-        require(seller != msg.sender, "Cannot buy your own NFT");
+        // Compter les positions en vente (limité par le nombre de positions actives)
+        uint256 onSaleCount = 0;
+        for (uint256 i = 0; i < allActivePositionsCount; i++) {
+            if (nftSales[i].isOnSale) {
+                onSaleCount++;
+            }
+        }
+        totalPositionsOnSale = onSaleCount;
 
-        // Transfert du paiement
-        IERC20(IMockPendleRouter(router).gUSDC()).transferFrom(
-            msg.sender,
-            seller,
-            sale.salePrice
+        protocolPendingFees = protocolFees.nonMaturedFees + protocolFees.maturedNonWithdrawnFees;
+        protocolWithdrawnFees = protocolFees.withdrawnFees;
+
+        return (
+            totalActivePositions,
+            totalPositionsOnSale,
+            protocolPendingFees,
+            protocolWithdrawnFees
         );
-
-        // Transfert du NFT
-        IStrategyNFT(nftContract).transferFrom(seller, msg.sender, positionId);
-
-        // Mise à jour des données
-        sale.isOnSale = false;
-        positions[msg.sender].push(positions[seller][positionId]);
-        delete positions[seller][positionId];
-
-        emit NFTSold(positionId, seller, msg.sender, sale.salePrice);
     }
 
-    // Fonction pour annuler la vente
-    function cancelNFTSale(uint256 positionId) external {
-        require(IStrategyNFT(nftContract).ownerOf(positionId) == msg.sender, "Not NFT owner");
-        require(nftSales[positionId].isOnSale, "NFT not for sale");
-
-        nftSales[positionId].isOnSale = false;
-        emit NFTListedForSale(positionId, 0, msg.sender);
+    /// @notice Retourne le nombre total de positions actives
+    /// @return Le nombre de positions actives
+    function getAllActivePositionsCount() external view returns (uint256) {
+        return allActivePositionsCount;
     }
+
+    // ::::::::::::: GETTERS POSITIONS ::::::::::::: // 
+
+    // Fonction pour voir toutes les positions d'un utilisateur
+    function getUserPositions(address user) external view returns (Position[] memory) {
+        return userPositions[user];
+    }
+
+    // Fonction pour voir une position spécifique
+    function getUserPosition(address user, uint256 positionId) external view returns (Position memory) {
+        require(positionId < userPositions[user].length, "Invalid position ID");
+        return userPositions[user][positionId];
+    }
+
+    // Getters pour les frais
+    function getCGPFees(address cgp) external view returns (Fees memory) {
+        return cgpFees[cgp];
+    }
+
+    function getProtocolFees() external view returns (Fees memory) {
+        return protocolFees;
+    }
+
 } 
+

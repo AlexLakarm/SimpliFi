@@ -9,11 +9,18 @@ import "@openzeppelin/contracts/utils/Base64.sol";
 contract StrategyNFT is ERC721Enumerable, Ownable {
     using Strings for uint256;
 
+    // ::::::::::::: CONSTANTS ::::::::::::: //
+
     // Adresse du contrat StrategyOne qui peut mint
     address public strategyContract;
 
     // URI de base pour les métadonnées
     string private _baseTokenURI;
+
+    // Variable pour suivre le dernier tokenId utilisé
+    uint256 private _lastTokenId;
+
+    // ::::::::::::: STRUCTS ::::::::::::: //
 
     // Structure pour stocker les attributs de la stratégie
     struct StrategyAttributes {
@@ -23,10 +30,13 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         uint256 timestamp;       // Date de création
     }
 
+    // ::::::::::::: MAPPINGS ::::::::::::: //
+
     // Mapping des attributs par tokenId
     mapping(uint256 => StrategyAttributes) public strategyAttributes;
 
-    // Events
+    // ::::::::::::: EVENTS ::::::::::::: //   
+
     event StrategyNFTMinted(
         address indexed owner,
         uint256 indexed tokenId,
@@ -38,18 +48,23 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
 
     event StrategyNFTBurned(uint256 indexed tokenId, uint256 timestamp);
 
-    // Variable pour suivre le dernier tokenId utilisé
-    uint256 private _lastTokenId;
+
+
+    // ::::::::::::: CONSTRUCTOR ::::::::::::: //
 
     constructor(string memory ipfsURI) ERC721("SimpliFi Strategies", "SFNFT") Ownable(msg.sender) {
         _baseTokenURI = ipfsURI;
     }
+
+    // ::::::::::::: FUNCTIONS ::::::::::::: //
 
     // Fonction pour définir l'adresse du contrat StrategyOne
     function setStrategyContract(address _strategyContract) external onlyOwner {
         require(_strategyContract != address(0), "Invalid address");
         strategyContract = _strategyContract;
     }
+
+    // :::: MINT :::: //
 
     // Fonction pour mint un nouveau NFT (appelée par StrategyOne)
     function mintStrategyNFT(
@@ -85,6 +100,8 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         return newTokenId;
     }
 
+    // :::: BURN :::: //
+
     // Fonction pour brûler un NFT (uniquement appelable par StrategyOne)
     function burn(uint256 tokenId) external {
         require(msg.sender == strategyContract, "Only strategy contract can burn");
@@ -96,6 +113,8 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         emit StrategyNFTBurned(tokenId, block.timestamp);
     }
 
+    // :::: BASE URI :::: //
+
     // Override de la fonction baseURI
     function _baseURI() internal view override returns (string memory) {
         return _baseTokenURI;
@@ -106,11 +125,7 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         _baseTokenURI = baseURI;
     }
 
-    // Fonction pour obtenir les attributs d'une stratégie
-    function getStrategyAttributes(uint256 tokenId) external view returns (StrategyAttributes memory) {
-        require(_ownerOf(tokenId) != address(0), "Token does not exist");
-        return strategyAttributes[tokenId];
-    }
+    // :::: TOKEN URI :::: //
 
     // Construction du tokenURI avec les attributs on-chain
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
@@ -124,7 +139,7 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
             _baseTokenURI
         ));
         
-        // Construction du JSON avec des virgules correctement placées
+        // Construction du JSON 
         string memory json = string(abi.encodePacked(
             '{"name": "Simplifi Strategy #', 
             Strings.toString(tokenId),
@@ -149,4 +164,26 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
             )
         );
     }
+
+    // ::::::::::::: GETTERS ::::::::::::: //
+
+    // Fonction pour obtenir les attributs d'une stratégie
+    function getStrategyAttributes(uint256 tokenId) external view returns (StrategyAttributes memory) {
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
+        return strategyAttributes[tokenId];
+    }
+
+    // Fonction pour obtenir tous les tokens d'un utilisateur
+    function getTokensOfOwner(address owner) external view returns (uint256[] memory) {
+        uint256 tokenCount = balanceOf(owner);
+        uint256[] memory tokens = new uint256[](tokenCount);
+        
+        for(uint256 i = 0; i < tokenCount; i++) {
+            tokens[i] = tokenOfOwnerByIndex(owner, i);
+        }
+        
+        return tokens;
+    }
+
+    
 } 
