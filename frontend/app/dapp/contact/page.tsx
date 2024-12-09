@@ -13,7 +13,7 @@ const ContactPage = () => {
                 <div className="p-6 bg-card rounded-lg border shadow-sm hover:shadow-md transition-shadow">
                     <h2 className="text-2xl font-semibold mb-4">Vous êtes un CGP ?</h2>
                     <p className="text-muted-foreground mb-6">
-                        Contactez l'équipe de SimpliFi pour planifier un échange ! Découvrez comment notre plateforme peut transformer votre gestion de patrimoine.
+                        Contactez l&apos;équipe de SimpliFi pour planifier un échange ! Découvrez comment notre plateforme peut transformer votre gestion de patrimoine.
                     </p>
                     <Button className="w-full">
                         <Mail className="mr-2 h-4 w-4" />

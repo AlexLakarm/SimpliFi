@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useReadContract, useAccount, useWriteContract, usePublicClient } from 'wagmi';
 import { contractAddresses, contractABIs } from "@/app/config/contracts";
 import { formatDistanceToNow, format } from 'date-fns';
@@ -26,9 +26,8 @@ type NFTSale = {
   isOnSale: boolean;
 };
 
-export default function PositionPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const strategyId = Number(resolvedParams.id);
+function PositionPageContent({ id }: { id: string }) {
+  const strategyId = Number(id);
   const { address } = useAccount();
   const [position, setPosition] = useState<Position | null>(null);
   const [nftId, setNftId] = useState<number | null>(null);
@@ -36,7 +35,6 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
   const [salePrice, setSalePrice] = useState<string>("");
   const [saleInfo, setSaleInfo] = useState<NFTSale | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [isApproved, setIsApproved] = useState(false);
   const router = useRouter();
   const publicClient = usePublicClient();
 
@@ -46,8 +44,108 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
   // Hook pour les toasts de transaction
   useTransactionToast(hash, error);
 
+  // Fonction pour rafraîchir le statut de vente
+  const refreshSaleStatus = useCallback(async () => {
+    if (positionId === null || !publicClient) return;
+
+    try {
+      const saleData = await publicClient.readContract({
+        address: contractAddresses.strategyOne,
+        abi: contractABIs.strategyOne,
+        functionName: 'nftSales',
+        args: [BigInt(positionId)],
+      }) as [bigint, boolean];
+
+      const [price, isOnSale] = saleData;
+      console.log('Statut de vente rafraîchi:', { price: price.toString(), isOnSale });
+      setSaleInfo({ salePrice: price, isOnSale });
+    } catch (error) {
+      console.error('Erreur lors du rafraîchissement du statut de vente:', error);
+    }
+  }, [positionId, publicClient]);
+
+  // Effet pour mettre à jour après une transaction
+  useEffect(() => {
+    if (hash) {
+      const checkTransaction = async () => {
+        try {
+          await publicClient?.waitForTransactionReceipt({ hash });
+          console.log('Transaction confirmée:', hash);
+          await refreshSaleStatus();
+        } catch (error) {
+          console.error('Erreur lors de la vérification de la transaction:', error);
+        }
+      };
+      checkTransaction();
+    }
+  }, [hash, publicClient, refreshSaleStatus]);
+
+  // Effet pour charger le statut de vente initial
+  useEffect(() => {
+    refreshSaleStatus();
+  }, [refreshSaleStatus]);
+
+  // Effet pour écouter les événements de vente
+  useEffect(() => {
+    if (!publicClient || positionId === null) return;
+
+    const unwatchListed = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTListedForSale',
+      onLogs: async (logs) => {
+        console.log('Événement NFTListedForSale détecté:', logs);
+        
+        for (const log of logs) {
+          if (log.args && Number(log.args.NFTid) === positionId) {
+            await refreshSaleStatus();
+            break;
+          }
+        }
+      }
+    });
+
+    const unwatchCanceled = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTSaleCanceled',
+      onLogs: async (logs) => {
+        console.log('Événement NFTSaleCanceled détecté:', logs);
+        
+        for (const log of logs) {
+          if (log.args && Number(log.args.NFTid) === positionId) {
+            await refreshSaleStatus();
+            break;
+          }
+        }
+      }
+    });
+
+    const unwatchSold = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTSold',
+      onLogs: async (logs) => {
+        console.log('Événement NFTSold détecté:', logs);
+        
+        for (const log of logs) {
+          if (log.args && Number(log.args.NFTid) === positionId) {
+            await refreshSaleStatus();
+            break;
+          }
+        }
+      }
+    });
+
+    return () => {
+      unwatchListed();
+      unwatchCanceled();
+      unwatchSold();
+    };
+  }, [publicClient, positionId, refreshSaleStatus]);
+
   // Lecture des positions de l'utilisateur
-  const { data: userPositions } = useReadContract({
+  const { data: userPositions, isLoading: isLoadingPositions } = useReadContract({
     address: contractAddresses.strategyOne,
     abi: contractABIs.strategyOne,
     functionName: 'getUserPositions',
@@ -58,7 +156,7 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
   });
 
   // Lecture des NFTs de l'utilisateur
-  const { data: userNFTs } = useReadContract({
+  const { data: userNFTs, isLoading: isLoadingNFTs } = useReadContract({
     address: contractAddresses.strategyNFT,
     abi: contractABIs.strategyNFT,
     functionName: 'getTokensOfOwner',
@@ -70,62 +168,67 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
 
   // Mise à jour de la position et des IDs
   useEffect(() => {
+    console.log('useEffect déclenché avec:', {
+      userPositions,
+      userNFTs,
+      strategyId,
+      address,
+      isLoadingPositions,
+      isLoadingNFTs
+    });
+
+    if (!address) {
+      console.log('Pas d\'adresse connectée');
+      return;
+    }
+
+    if (isLoadingPositions || isLoadingNFTs) {
+      console.log('Chargement des données en cours...');
+      return;
+    }
+
     if (userPositions && userNFTs) {
       const positionsArray = userPositions as unknown as Position[];
       const nftIds = userNFTs as bigint[];
       
-      // Trouver l'index de la position qui correspond au NFT
-      const positionIndex = Number(strategyId);
-      const nftIdNumber = Number(nftIds[positionIndex]);
+      console.log('Données chargées:', {
+        positionsArray,
+        nftIds: nftIds.map(id => Number(id)),
+        strategyId
+      });
+
+      // Trouver le NFT correspondant au strategyId
+      const nftIdBigInt = nftIds.find(id => Number(id) === strategyId);
+      
+      if (!nftIdBigInt) {
+        console.log('NFT non trouvé pour l\'ID:', strategyId);
+        return;
+      }
+
+      // Trouver l'index de la position correspondante
+      const positionIndex = nftIds.findIndex(id => Number(id) === strategyId);
       
       console.log('Position mapping:', {
         strategyId,
-        nftIdNumber,
+        nftId: Number(nftIdBigInt),
         positionIndex,
         allNftIds: nftIds.map(id => Number(id)),
         positionsLength: positionsArray.length,
-        userPositions: positionsArray,
       });
 
-      if (positionIndex < positionsArray.length) {
+      if (positionIndex !== -1 && positionIndex < positionsArray.length) {
         setPosition(positionsArray[positionIndex]);
-        setNftId(nftIdNumber);
-        setPositionId(nftIdNumber - 1);
+        setNftId(Number(nftIdBigInt));
+        setPositionId(Number(nftIdBigInt) - 1);
+        console.log('Position trouvée et états mis à jour');
+      } else {
+        console.log('Position non trouvée dans le tableau');
       }
     }
-  }, [userPositions, userNFTs, strategyId]);
-
-  // Effet pour charger le statut de vente
-  useEffect(() => {
-    const loadSaleInfo = async () => {
-      if (positionId === null || !publicClient) return;
-
-      try {
-        const saleData = await publicClient.readContract({
-          address: contractAddresses.strategyOne,
-          abi: contractABIs.strategyOne,
-          functionName: 'nftSales',
-          args: [BigInt(positionId)],
-        }) as [bigint, boolean];
-
-        const [price, isOnSale] = saleData;
-        console.log('Sale status:', {
-          positionId,
-          nftId,
-          price: price.toString(),
-          isOnSale
-        });
-        setSaleInfo({ salePrice: price, isOnSale });
-      } catch (error) {
-        console.error('Erreur lors de la lecture du statut de vente:', error);
-      }
-    };
-
-    loadSaleInfo();
-  }, [positionId, publicClient, nftId]);
+  }, [userPositions, userNFTs, strategyId, address, isLoadingPositions, isLoadingNFTs]);
 
   // Lecture de l'approbation globale
-  const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
+  const { data: isApprovedForAll } = useReadContract({
     address: contractAddresses.strategyNFT,
     abi: contractABIs.strategyNFT,
     functionName: 'isApprovedForAll',
@@ -134,40 +237,6 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
       enabled: Boolean(address)
     }
   });
-
-  // Effet pour mettre à jour l'état après une transaction
-  useEffect(() => {
-    if (hash) {
-      const checkTransaction = async () => {
-        try {
-          await publicClient?.waitForTransactionReceipt({ hash });
-          console.log('Transaction confirmée:', hash);
-          // Rafraîchir l'état d'approbation
-          await refetchApproval();
-          // Rafraîchir le statut de vente
-          const loadSaleInfo = async () => {
-            if (!nftId || !publicClient) return;
-            try {
-              const saleData = await publicClient.readContract({
-                address: contractAddresses.strategyOne,
-                abi: contractABIs.strategyOne,
-                functionName: 'nftSales',
-                args: [BigInt(strategyId)],
-              }) as [bigint, boolean];
-              const [price, isOnSale] = saleData;
-              setSaleInfo({ salePrice: price, isOnSale });
-            } catch (error) {
-              console.error('Erreur lors de la lecture du statut de vente:', error);
-            }
-          };
-          loadSaleInfo();
-        } catch (error) {
-          console.error('Erreur lors de la vérification de la transaction:', error);
-        }
-      };
-      checkTransaction();
-    }
-  }, [hash, publicClient, nftId, refetchApproval]);
 
   // Fonction pour approuver
   const handleApprove = async () => {
@@ -299,8 +368,34 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
     return formatDistanceToNow(date, { addSuffix: true, locale: fr });
   };
 
+  if (!address) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <p className="text-lg text-muted-foreground">
+          Veuillez connecter votre portefeuille
+        </p>
+      </div>
+    );
+  }
+
+  if (isLoadingPositions || isLoadingNFTs) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <p className="text-lg text-muted-foreground">
+          Chargement de vos positions...
+        </p>
+      </div>
+    );
+  }
+
   if (!position) {
-    return <div>Chargement...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <p className="text-lg text-muted-foreground">
+          Position non trouvée
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -406,4 +501,9 @@ export default function PositionPage({ params }: { params: Promise<{ id: string 
       </div>
     </div>
   );
+}
+
+export default function PositionPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  return <PositionPageContent id={resolvedParams.id} />;
 } 

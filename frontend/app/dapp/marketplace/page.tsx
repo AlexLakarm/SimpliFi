@@ -1,13 +1,23 @@
 "use client"
 
-import { useEffect, useState } from 'react';
-import { useAccount, usePublicClient, useWriteContract, useTransactionConfirmations } from 'wagmi';
+import { useState, useEffect, useCallback } from "react";
+import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
-import { Position } from '@/app/types';
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Button } from "@/components/ui/button";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
+
+type Position = {
+  gUSDCAmount: bigint;
+  ptAmount: bigint;
+  entryDate: bigint;
+  maturityDate: bigint;
+  exitDate: bigint;
+  isActive: boolean;
+  allPositionsId: bigint;
+  owner: `0x${string}`;
+};
 
 type PositionForSale = {
   position: Position;
@@ -21,12 +31,11 @@ export default function Marketplace() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContract, data: hash, error } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useTransactionConfirmations({ hash });
 
   // Hook pour les toasts de transaction
   useTransactionToast(hash, error);
 
-  const fetchPositionsForSale = async () => {
+  const fetchPositionsForSale = useCallback(async () => {
     if (!publicClient) return;
 
     try {
@@ -94,20 +103,50 @@ export default function Marketplace() {
     } catch (error) {
       console.error('Error fetching positions for sale:', error);
     }
-  };
+  }, [publicClient]);
 
   // Effet pour charger les positions initiales
   useEffect(() => {
     fetchPositionsForSale();
-  }, [publicClient]);
+  }, [fetchPositionsForSale]);
 
-  // Effet pour recharger les positions après une transaction confirmée
+  // Effet pour écouter les événements de vente
   useEffect(() => {
-    if (isConfirmed) {
-      console.log('Transaction confirmée, rechargement des positions...');
-      fetchPositionsForSale();
-    }
-  }, [isConfirmed]);
+    if (!publicClient) return;
+
+    const unwatchListed = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTListedForSale',
+      onLogs: async () => {
+        await fetchPositionsForSale();
+      }
+    });
+
+    const unwatchCanceled = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTSaleCanceled',
+      onLogs: async () => {
+        await fetchPositionsForSale();
+      }
+    });
+
+    const unwatchSold = publicClient.watchContractEvent({
+      address: contractAddresses.strategyOne,
+      abi: contractABIs.strategyOne,
+      eventName: 'NFTSold',
+      onLogs: async () => {
+        await fetchPositionsForSale();
+      }
+    });
+
+    return () => {
+      unwatchListed();
+      unwatchCanceled();
+      unwatchSold();
+    };
+  }, [publicClient, fetchPositionsForSale]);
 
   const handleBuyNFT = async (NFTid: bigint, salePrice: bigint) => {
     if (!address) return;
