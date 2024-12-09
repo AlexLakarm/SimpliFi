@@ -26,14 +26,21 @@ async function main() {
     await roleControl.connect(cgp).addClient(client.address);
     console.log("✓ Client role granted to:", client.address);
 
+    // Ajouter le nouveau client
+    const newClientAddress = "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc";
+    await roleControl.connect(cgp).addClient(newClientAddress);
+    console.log("✓ Client role granted to:", newClientAddress);
+
     // Vérifier les rôles
     console.log("\nVerifying roles...");
     const isAdmin = await roleControl.isAdmin(admin.address);
     const isCGP = await roleControl.isCGP(cgp.address);
     const isClient = await roleControl.isClient(client.address);
+    const isNewClient = await roleControl.isClient(newClientAddress);
     console.log("Admin role verified:", isAdmin);
     console.log("CGP role verified:", isCGP);
     console.log("Client role verified:", isClient);
+    console.log("New client role verified:", isNewClient);
 
     // Sauvegarder l'adresse
     const addresses = getAddresses();
