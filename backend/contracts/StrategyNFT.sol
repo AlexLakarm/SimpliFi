@@ -6,37 +6,51 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 
+/// @title StrategyNFT
+/// @notice NFT contract for representing investment strategy positions
+/// @dev Extends ERC721Enumerable for enumerable token support and Ownable for access control
 contract StrategyNFT is ERC721Enumerable, Ownable {
     using Strings for uint256;
 
     // ::::::::::::: CONSTANTS ::::::::::::: //
 
-    // Adresse du contrat StrategyOne qui peut mint
+    /// @notice Address of the StrategyOne contract that can mint NFTs
     address public strategyContract;
 
-    // URI de base pour les métadonnées
+    /// @notice Base URI for token metadata
     string private _baseTokenURI;
 
-    // Variable pour suivre le dernier tokenId utilisé
+    /// @notice Variable to track the last used tokenId
     uint256 private _lastTokenId;
 
     // ::::::::::::: STRUCTS ::::::::::::: //
 
-    // Structure pour stocker les attributs de la stratégie
+    /// @notice Structure to store strategy attributes
+    /// @param initialAmount Initial amount invested in the strategy
+    /// @param duration Duration of the strategy in seconds
+    /// @param strategyId ID of the strategy in StrategyOne contract
+    /// @param timestamp Creation timestamp of the strategy
     struct StrategyAttributes {
-        uint256 initialAmount;   // Montant initial investi
-        uint256 duration;        // Durée de la stratégie
-        uint256 strategyId;      // ID de la stratégie dans StrategyOne
-        uint256 timestamp;       // Date de création
+        uint256 initialAmount;
+        uint256 duration;
+        uint256 strategyId;
+        uint256 timestamp;
     }
 
     // ::::::::::::: MAPPINGS ::::::::::::: //
 
-    // Mapping des attributs par tokenId
+    /// @notice Mapping of token attributes by tokenId
     mapping(uint256 => StrategyAttributes) public strategyAttributes;
 
     // ::::::::::::: EVENTS ::::::::::::: //   
 
+    /// @notice Emitted when a new strategy NFT is minted
+    /// @param owner Address of the NFT owner
+    /// @param tokenId ID of the minted NFT
+    /// @param initialAmount Initial investment amount
+    /// @param duration Strategy duration
+    /// @param strategyId Strategy ID in StrategyOne
+    /// @param timestamp Minting timestamp
     event StrategyNFTMinted(
         address indexed owner,
         uint256 indexed tokenId,
@@ -46,19 +60,24 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         uint256 timestamp
     );
 
+    /// @notice Emitted when a strategy NFT is burned
+    /// @param tokenId ID of the burned NFT
+    /// @param timestamp Burning timestamp
     event StrategyNFTBurned(uint256 indexed tokenId, uint256 timestamp);
-
-
 
     // ::::::::::::: CONSTRUCTOR ::::::::::::: //
 
+    /// @notice Initializes the contract with a base IPFS URI
+    /// @param ipfsURI Base IPFS URI for token metadata
     constructor(string memory ipfsURI) ERC721("SimpliFi Strategies", "SFNFT") Ownable(msg.sender) {
         _baseTokenURI = ipfsURI;
     }
 
     // ::::::::::::: FUNCTIONS ::::::::::::: //
 
-    // Fonction pour définir l'adresse du contrat StrategyOne
+    /// @notice Sets the address of the StrategyOne contract
+    /// @param _strategyContract Address of the StrategyOne contract
+    /// @dev Can only be called by the contract owner
     function setStrategyContract(address _strategyContract) external onlyOwner {
         require(_strategyContract != address(0), "Invalid address");
         strategyContract = _strategyContract;
@@ -66,7 +85,13 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
 
     // :::: MINT :::: //
 
-    // Fonction pour mint un nouveau NFT (appelée par StrategyOne)
+    /// @notice Mints a new strategy NFT
+    /// @param to Address to mint the NFT to
+    /// @param initialAmount Initial investment amount
+    /// @param duration Strategy duration
+    /// @param strategyId Strategy ID in StrategyOne
+    /// @return uint256 ID of the minted NFT
+    /// @dev Can only be called by the StrategyOne contract
     function mintStrategyNFT(
         address to,
         uint256 initialAmount,
@@ -75,7 +100,6 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
     ) external returns (uint256) {
         require(msg.sender == strategyContract, "Only strategy contract can mint");
         
-        // Incrémenter le tokenId au lieu d'utiliser totalSupply
         _lastTokenId++;
         uint256 newTokenId = _lastTokenId;
         
@@ -102,7 +126,9 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
 
     // :::: BURN :::: //
 
-    // Fonction pour brûler un NFT (uniquement appelable par StrategyOne)
+    /// @notice Burns a strategy NFT
+    /// @param tokenId ID of the NFT to burn
+    /// @dev Can only be called by the StrategyOne contract
     function burn(uint256 tokenId) external {
         require(msg.sender == strategyContract, "Only strategy contract can burn");
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
@@ -115,31 +141,35 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
 
     // :::: BASE URI :::: //
 
-    // Override de la fonction baseURI
+    /// @notice Returns the base URI for token metadata
+    /// @return string Base URI
     function _baseURI() internal view override returns (string memory) {
         return _baseTokenURI;
     }
 
-    // Fonction pour mettre à jour l'URI de base
+    /// @notice Sets a new base URI for token metadata
+    /// @param baseURI New base URI
+    /// @dev Can only be called by the contract owner
     function setBaseURI(string memory baseURI) external onlyOwner {
         _baseTokenURI = baseURI;
     }
 
     // :::: TOKEN URI :::: //
 
-    // Construction du tokenURI avec les attributs on-chain
+    /// @notice Returns the URI for a given token's metadata
+    /// @param tokenId ID of the token
+    /// @return string Token URI with metadata
+    /// @dev Constructs an on-chain base64 encoded JSON metadata string
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
         
         StrategyAttributes memory attrs = strategyAttributes[tokenId];
         
-        // Construction de l'URL de l'image avec le format correct
         string memory imageUrl = string(abi.encodePacked(
             "https://ipfs.io/ipfs/",
             _baseTokenURI
         ));
         
-        // Construction du JSON 
         string memory json = string(abi.encodePacked(
             '{"name": "Simplifi Strategy #', 
             Strings.toString(tokenId),
@@ -156,7 +186,6 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
             '"}]}'
         ));
 
-        // Utilisation de Base64 d'OpenZeppelin
         return string(
             abi.encodePacked(
                 "data:application/json;base64,",
@@ -167,13 +196,17 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
 
     // ::::::::::::: GETTERS ::::::::::::: //
 
-    // Fonction pour obtenir les attributs d'une stratégie
+    /// @notice Returns the attributes of a strategy NFT
+    /// @param tokenId ID of the NFT
+    /// @return StrategyAttributes Attributes of the strategy
     function getStrategyAttributes(uint256 tokenId) external view returns (StrategyAttributes memory) {
         require(_ownerOf(tokenId) != address(0), "Token does not exist");
         return strategyAttributes[tokenId];
     }
 
-    // Fonction pour obtenir tous les tokens d'un utilisateur
+    /// @notice Returns all tokens owned by an address
+    /// @param owner Address to query
+    /// @return uint256[] Array of token IDs owned by the address
     function getTokensOfOwner(address owner) external view returns (uint256[] memory) {
         uint256 tokenCount = balanceOf(owner);
         uint256[] memory tokens = new uint256[](tokenCount);
@@ -184,6 +217,4 @@ contract StrategyNFT is ERC721Enumerable, Ownable {
         
         return tokens;
     }
-
-    
 } 
