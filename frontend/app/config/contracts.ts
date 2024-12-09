@@ -707,6 +707,24 @@ export const contractABIs = {
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "mint",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "decimals",
       "outputs": [
@@ -2830,6 +2848,25 @@ export const contractABIs = {
           "internalType": "address",
           "name": "owner",
           "type": "address"
+        }
+      ],
+      "name": "getTokensOfOwner",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
         },
         {
           "internalType": "address",
@@ -3249,6 +3286,11 @@ export const contractABIs = {
       "type": "constructor"
     },
     {
+      "inputs": [],
+      "name": "ReentrancyGuardReentrantCall",
+      "type": "error"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -3353,7 +3395,13 @@ export const contractABIs = {
         {
           "indexed": true,
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "NFTid",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "allPositionsId",
           "type": "uint256"
         },
         {
@@ -3378,7 +3426,38 @@ export const contractABIs = {
         {
           "indexed": true,
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "NFTid",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "allPositionsId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        }
+      ],
+      "name": "NFTSaleCanceled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "NFTid",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "allPositionsId",
           "type": "uint256"
         },
         {
@@ -3463,9 +3542,9 @@ export const contractABIs = {
           "type": "address"
         },
         {
-          "indexed": false,
+          "indexed": true,
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "NFTid",
           "type": "uint256"
         },
         {
@@ -3506,9 +3585,9 @@ export const contractABIs = {
           "type": "address"
         },
         {
-          "indexed": false,
+          "indexed": true,
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "NFTid",
           "type": "uint256"
         },
         {
@@ -3543,7 +3622,61 @@ export const contractABIs = {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "allPositions",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "gUSDCAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "ptAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "entryDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maturityDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "exitDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isActive",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "allPositionsId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "allPositionsId",
           "type": "uint256"
         }
       ],
@@ -3556,7 +3689,7 @@ export const contractABIs = {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "allPositionsId",
           "type": "uint256"
         }
       ],
@@ -3624,13 +3757,26 @@ export const contractABIs = {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "allPositionsId",
           "type": "uint256"
         }
       ],
       "name": "exitStrategy",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllActivePositionsCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -3701,26 +3847,26 @@ export const contractABIs = {
     },
     {
       "inputs": [],
-      "name": "getStrategyDetails",
+      "name": "getProtocolStats",
       "outputs": [
         {
-          "internalType": "address",
-          "name": "underlyingToken",
-          "type": "address"
-        },
-        {
           "internalType": "uint256",
-          "name": "currentYield",
+          "name": "totalActivePositions",
           "type": "uint256"
         },
         {
           "internalType": "uint256",
-          "name": "duration",
+          "name": "totalPositionsOnSale",
           "type": "uint256"
         },
         {
           "internalType": "uint256",
-          "name": "rate",
+          "name": "protocolPendingFees",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "protocolWithdrawnFees",
           "type": "uint256"
         }
       ],
@@ -3773,6 +3919,16 @@ export const contractABIs = {
               "internalType": "bool",
               "name": "isActive",
               "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "allPositionsId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
             }
           ],
           "internalType": "struct StrategyOne.Position",
@@ -3824,6 +3980,16 @@ export const contractABIs = {
               "internalType": "bool",
               "name": "isActive",
               "type": "bool"
+            },
+            {
+              "internalType": "uint256",
+              "name": "allPositionsId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
             }
           ],
           "internalType": "struct StrategyOne.Position[]",
@@ -3838,7 +4004,7 @@ export const contractABIs = {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "positionId",
+          "name": "allPositionsId",
           "type": "uint256"
         },
         {
@@ -3850,35 +4016,6 @@ export const contractABIs = {
       "name": "listNFTForSale",
       "outputs": [],
       "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "name": "markets",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "isOnSale",
-          "type": "bool"
-        },
-        {
-          "internalType": "uint256",
-          "name": "salePrice",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -3926,74 +4063,6 @@ export const contractABIs = {
           "internalType": "address",
           "name": "",
           "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "name": "positionCount",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "name": "positions",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "gUSDCAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "ptAmount",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "entryDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "maturityDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "exitDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "isActive",
-          "type": "bool"
         }
       ],
       "stateMutability": "view",
@@ -4080,6 +4149,84 @@ export const contractABIs = {
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "userPositionCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "userPositions",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "gUSDCAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "ptAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "entryDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maturityDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "exitDate",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "isActive",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "allPositionsId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "withdrawCGPFees",
       "outputs": [],
@@ -4130,81 +4277,6 @@ export const contractABIs = {
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "ptToken",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "yieldValue",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRateAndPrice",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "ptToken",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "duration",
-          "type": "uint256"
-        }
-      ],
-      "name": "setDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    }
-  ] as const,
-
-  mockPendleFi: [
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "ptToken",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "yieldValue",
-          "type": "uint256"
-        }
-      ],
-      "name": "setRateAndPrice",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "ptToken",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "duration",
-          "type": "uint256"
-        }
-      ],
-      "name": "setDuration",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     }
   ] as const,
