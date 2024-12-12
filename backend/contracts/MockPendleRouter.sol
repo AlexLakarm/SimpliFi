@@ -6,16 +6,30 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // ::::::::::::: ERRORS ::::::::::::: // 
 
+/// @notice Thrown when PT output amount is insufficient
 error RouterInsufficientPtOut(uint256 actualPtOut, uint256 requiredPtOut);
+
+/// @notice Thrown when token output amount is insufficient
 error RouterInsufficientTokenOut(uint256 actualTokenOut, uint256 requiredTokenOut);
+
+/// @notice Thrown when trying to interact with an expired market
 error MarketExpired();
+
+/// @notice Thrown when trying to redeem before maturity
 error YCNotExpired();
+
+/// @notice Thrown when a zero address is provided
 error ZeroAddress();
+
+/// @notice Thrown when market input amounts are zero
 error MarketZeroAmountsInput();
+
+/// @notice Thrown when token allowance is insufficient
 error InsufficientAllowance(address token, uint256 currentAllowance, uint256 requiredAmount);
 
 // ::::::::::::: INTERFACES ::::::::::::: // 
 
+/// @notice Interface for the price oracle contract
 interface IPriceOracle {
     function getPTRate(address token) external view returns (uint256);
     function getYield(address token) external view returns (uint256);
@@ -23,6 +37,7 @@ interface IPriceOracle {
     function setDuration(address token, uint256 duration) external;
 }
 
+/// @notice Interface for the PT gUSDC token
 interface IPtgUSDC {
     function mint(address to, uint256 amount, uint256 maturity) external;
     function burn(address from, uint256 amount) external;
@@ -30,35 +45,51 @@ interface IPtgUSDC {
     function maturities(uint256 maturity) external view returns (bool);
 }
 
+/// @notice Interface for the gUSDC token
 interface IgUSDC is IERC20 {
     function mint(address to, uint256 amount) external;
 }
 
+/// @title MockPendleRouter
+/// @notice Mock contract simulating Pendle's router functionality for testing purposes
+/// @dev Implements basic swap and redemption functionality with mock data
 contract MockPendleRouter is Ownable {
 
     // ::::::::::::: CONSTANTS ::::::::::::: // 
 
+    /// @notice Address of the gUSDC token
     address public gUSDC;
+
+    /// @notice Address of the PT gUSDC token
     address public PTgUSDC;
+
+    /// @notice Scale factor for precision (1e18)
     uint256 private constant SCALE = 1e18;
 
+    /// @notice Price oracle interface
     IPriceOracle public priceOracle;
+
+    /// @notice PT gUSDC interface
     IPtgUSDC public ptgUSDC;
 
     // ::::::::::::: MAPPINGS ::::::::::::: // 
 
-    // Mapping des soldes par utilisateur et par date de maturité
+    /// @notice Mapping of user balances by maturity date
     mapping(address => mapping(uint256 => uint256)) public userBalances;
 
-    // Mapping des tokens vers leurs PT
+    /// @notice Mapping of tokens to their PT tokens
     mapping(address => address) public tokenToPt;
 
-    // Mapping pour stocker les détails de la stratégie pour chaque utilisateur et date de maturité
+    /// @notice Mapping of user strategies by maturity date
     mapping(address => mapping(uint256 => Strategy)) public userStrategies;
 
     // ::::::::::::: STRUCTS ::::::::::::: // 
 
-    // Structure pour stocker les détails de la stratégie
+    /// @notice Structure to store strategy details
+    /// @param annualYield Annual yield percentage
+    /// @param duration Strategy duration in seconds
+    /// @param entryRate Entry rate for the strategy
+    /// @param amount Amount of tokens in the strategy
     struct Strategy {
         uint256 annualYield;
         uint256 duration;
@@ -68,6 +99,7 @@ contract MockPendleRouter is Ownable {
     
     // ::::::::::::: EVENTS ::::::::::::: // 
 
+    /// @notice Emitted when a swap occurs
     event Swapped(
         address indexed user,
         address indexed inputToken,
@@ -77,6 +109,8 @@ contract MockPendleRouter is Ownable {
         uint256 maturityDate,
         uint256 timestamp
     );
+
+    /// @notice Emitted when PT tokens are redeemed
     event PtRedeemed(
         address indexed user, 
         uint256 principal,
@@ -84,69 +118,64 @@ contract MockPendleRouter is Ownable {
         uint256 totalAmount,
         uint256 maturityDate
     );
+
+    /// @notice Emitted when parameters are updated
     event ParametersUpdated(uint256 newDuration, uint256 newYield);
 
     // ::::::::::::: CONSTRUCTOR ::::::::::::: // 
 
+    /// @notice Initializes the router with necessary token and oracle addresses
+    /// @param _gUSDCAddress Address of the gUSDC token
+    /// @param _PTgUSDCAdress Address of the PT gUSDC token
+    /// @param _OracleAddress Address of the price oracle
     constructor(address _gUSDCAddress, address _PTgUSDCAdress, address _OracleAddress) Ownable(msg.sender) {
         gUSDC = _gUSDCAddress;
         PTgUSDC = _PTgUSDCAdress;
         priceOracle = IPriceOracle(_OracleAddress);
         ptgUSDC = IPtgUSDC(_PTgUSDCAdress);
         
-        // Initialisation du mapping pour gUSDC
+        // Initialize mapping for gUSDC
         tokenToPt[_gUSDCAddress] = _PTgUSDCAdress;
     }
 
-    // ::::::::::::: FUNCTIONS ::::::::::::: // 
+    // ::::::::::::: EXTERNAL FUNCTIONS ::::::::::::: // 
 
-    // Nouvelle fonction pour gérer les associations token -> PT
-    function setTokenToPt(address token, address pt) external onlyOwner {
-        if (token == address(0) || pt == address(0)) revert ZeroAddress();
-        tokenToPt[token] = pt;
-    }
-
-    // Fonction pour acheter des PT avec des gUSDC
-    function swapExactTokenForPt(address tokenAddress, uint256 amount) external returns (uint256 ptReceived) {
+    /// @notice Swaps exact amount of tokens for PT tokens
+    /// @param tokenAddress Address of the input token
+    /// @param amount Amount of tokens to swap
+    /// @return ptReceived Amount of PT tokens received
+    function swapExactTokenForPt(
+        address tokenAddress,
+        uint256 amount
+    ) external returns (uint256 ptReceived) {
         if (amount == 0) revert MarketZeroAmountsInput();
         if (tokenAddress == address(0)) revert ZeroAddress();
-        if (tokenToPt[tokenAddress] == address(0)) revert RouterInsufficientPtOut(0, amount);
         
-        // Vérification de l'allowance avec message plus clair
-        uint256 currentAllowance = IERC20(tokenAddress).allowance(msg.sender, address(this));
-        if (currentAllowance < amount) {
-            revert InsufficientAllowance(
-                tokenAddress,
-                currentAllowance,
-                amount
-            );
-        }
-
         address ptAddress = tokenToPt[tokenAddress];
         
-        // Récupération des paramètres via l'oracle
+        // Get parameters from oracle
         uint256 currentRate = priceOracle.getPTRate(ptAddress);
         uint256 strategyDuration = priceOracle.getDuration(ptAddress);
         uint256 currentYield = priceOracle.getYield(ptAddress);
         require(currentRate > 0, "Invalid price from oracle");
         require(strategyDuration > 0, "Invalid duration from oracle");
 
-        // Calcul du yield proratisé sur la durée
+        // Calculate pro-rated yield over duration
         uint256 proRatedYield = (currentYield * strategyDuration * SCALE) / (365 days * 100);
         
-        // Calcul des PT reçus - maintenant nous ajoutons le yield au lieu de le soustraire
+        // Calculate PT received - now adding yield instead of subtracting
         ptReceived = (amount * (SCALE + proRatedYield)) / SCALE;
 
-        // Calcul de la maturité
+        // Calculate maturity date
         uint256 maturityDate = block.timestamp + strategyDuration;
 
-        // Transfert des tokens de l'utilisateur vers le router
+        // Transfer tokens from user to router
         IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
         
-        // Mint des PT directement à l'utilisateur
+        // Mint PT directly to user
         ptgUSDC.mint(msg.sender, ptReceived, maturityDate);
 
-        // Stocker uniquement la stratégie
+        // Store strategy details
         userStrategies[msg.sender][maturityDate] = Strategy({
             annualYield: currentYield,
             duration: strategyDuration,
@@ -165,7 +194,9 @@ contract MockPendleRouter is Ownable {
         );
     }
 
-    // Renommage de claimYield en redeemPyToToken pour correspondre à la nomenclature Pendle
+    /// @notice Redeems PT tokens for underlying tokens at maturity
+    /// @param tokenAddress Address of the underlying token
+    /// @param maturityDate Maturity date of the position
     function redeemPyToToken(address tokenAddress, uint256 maturityDate) external {
         if (block.timestamp < maturityDate) revert YCNotExpired();
         if (block.timestamp >= maturityDate + 365 days) revert MarketExpired();
@@ -175,90 +206,39 @@ contract MockPendleRouter is Ownable {
         if (ptAddress == address(0)) revert RouterInsufficientPtOut(0, 0);
 
         Strategy memory strategy = userStrategies[msg.sender][maturityDate];
-        if (strategy.amount == 0) revert MarketZeroAmountsInput();
-        
-        // Vérifier que l'utilisateur a approuvé le Router pour les PT
-        uint256 currentAllowance = IERC20(ptAddress).allowance(msg.sender, address(this));
-        if (currentAllowance < strategy.amount) {
-            revert InsufficientAllowance(
-                ptAddress,
-                currentAllowance,
-                strategy.amount
-            );
-        }
+        require(strategy.amount > 0, "No strategy found");
 
-        // Vérifier la balance PT de l'utilisateur
-        uint256 ptBalance = IERC20(ptAddress).balanceOf(msg.sender);
-        if (ptBalance < strategy.amount) {
-            revert RouterInsufficientTokenOut(ptBalance, strategy.amount);
-        }
+        // Calculate redemption amounts
+        uint256 principal = strategy.amount;
+        uint256 yieldAmount = (principal * strategy.annualYield * strategy.duration) / (365 days * 100);
+        uint256 totalAmount = principal + yieldAmount;
 
-        uint256 totalAmount = strategy.amount;
+        // Burn PT tokens
+        ptgUSDC.burn(msg.sender, strategy.amount);
 
-        // Transfert des PT de l'utilisateur vers le Router
-        IERC20(ptAddress).transferFrom(msg.sender, address(this), strategy.amount);
-        
-        // Mint du gUSDC nécessaire
-        IgUSDC(tokenAddress).mint(address(this), totalAmount);
-        
-        // Burn des PT
-        ptgUSDC.burn(address(this), strategy.amount);
-        
-        // Transfert du gUSDC à l'utilisateur
-        IERC20(tokenAddress).transfer(msg.sender, totalAmount);
+        // Mint gUSDC to user
+        IgUSDC(tokenAddress).mint(msg.sender, totalAmount);
 
-        // Nettoyage
+        // Clear strategy data
         delete userStrategies[msg.sender][maturityDate];
 
-        // Correction du calcul du principal et du yield
-        uint256 principal = 100 * 1e6; // 100 gUSDC avec 6 décimales
-        uint256 implicitYield = totalAmount - principal;
-        
         emit PtRedeemed(
-            msg.sender, 
-            principal,    // 100 gUSDC
-            implicitYield, // 4.931506 gUSDC
-            totalAmount,   // 104.931506 gUSDC
+            msg.sender,
+            principal,
+            yieldAmount,
+            totalAmount,
             maturityDate
         );
     }
 
-    // ::::::::::::: GETTERS ::::::::::::: // 
+    // ::::::::::::: ADMIN FUNCTIONS ::::::::::::: // 
 
-    // Fonction pour récupérer les soldes par maturité
-    function getBalance(address user, uint256 maturityDate) external view returns (uint256) {
-        return userBalances[user][maturityDate];
-    }
-
-    // Fonction pour récupérer les détails de la stratégie
-    function getActiveStrategy(address user, uint256 maturityDate) 
-        external 
-        view 
-        returns (
-            uint256 annualYield,
-            uint256 duration,
-            uint256 entryRate,
-            uint256 amount
-        ) 
-    {
-        Strategy memory strategy = userStrategies[user][maturityDate];
-        return (
-            strategy.annualYield,
-            strategy.duration,
-            strategy.entryRate,
-            strategy.amount
-        );
-    }
-
-    // ::::::::::::: RESCUE FUNCTIONS ::::::::::::: // 
-
-    // Fonction pour récupérer les PT non utilisés (en cas d'urgence)
-    function rescuePT(address ptToken, uint256 amount) external onlyOwner {
-        IERC20(ptToken).transfer(msg.sender, amount);
-    }
-
-    // Fonction pour récupérer les tokens sous-jacents non utilisés (en cas d'urgence)
-    function rescueToken(address token, uint256 amount) external onlyOwner {
-        IERC20(token).transfer(msg.sender, amount);
+    /// @notice Sets the mapping between a token and its PT token
+    /// @param tokenAddress Address of the underlying token
+    /// @param ptAddress Address of the PT token
+    function setTokenToPt(address tokenAddress, address ptAddress) external onlyOwner {
+        if (tokenAddress == address(0)) revert ZeroAddress();
+        if (ptAddress == address(0)) revert ZeroAddress();
+        tokenToPt[tokenAddress] = ptAddress;
     }
 }
