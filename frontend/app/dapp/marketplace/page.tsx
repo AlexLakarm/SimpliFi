@@ -35,11 +35,6 @@ export default function Marketplace() {
   // Gestion des transactions
   const { writeContract, data: hash, error, isPending } = useWriteContract();
   
-  // Attendre la réception de la transaction
-  const { isLoading: isWaitingReceipt, isSuccess: isReceived } = useWaitForTransactionReceipt({
-    hash,
-  });
-
   // Attendre les confirmations
   const { data: confirmations, isLoading: isWaitingConfirmation } = useTransactionConfirmations({
     hash,
@@ -50,7 +45,7 @@ export default function Marketplace() {
 
   // Effet pour rafraîchir les données après une transaction confirmée
   useEffect(() => {
-    if (isReceived) {
+    if (confirmations === BigInt(1)) {
       // Recharger les positions
       loadPositions();
       // Vérifier les approbations
@@ -60,7 +55,7 @@ export default function Marketplace() {
         );
       }
     }
-  }, [isReceived]);
+  }, [confirmations]);
 
   // Récupérer l'adresse gUSDC
   useEffect(() => {
@@ -213,7 +208,7 @@ export default function Marketplace() {
     return formatDistanceToNow(date, { addSuffix: true, locale: fr });
   };
 
-  const isTransactionInProgress = isPending || isWaitingReceipt || isWaitingConfirmation;
+  const isTransactionInProgress = isPending || isWaitingConfirmation;
 
   return (
     <div className="space-y-4 max-w-full">

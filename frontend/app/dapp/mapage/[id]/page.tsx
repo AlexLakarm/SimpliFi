@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react";
-import { useReadContract, useAccount, useWriteContract, usePublicClient } from 'wagmi';
+import { useReadContract, useAccount, useWriteContract, usePublicClient, useTransactionConfirmations } from 'wagmi';
 import { contractAddresses, contractABIs } from "@/app/config/contracts";
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -44,6 +44,22 @@ function PositionPageContent({ id }: { id: string }) {
   // Hook pour les toasts de transaction
   useTransactionToast(hash, error);
 
+  // Suivre les confirmations de transaction
+  const { data: confirmations } = useTransactionConfirmations({
+    hash,
+  });
+
+  // Effet pour rafraîchir après confirmation
+  useEffect(() => {
+    if (confirmations === BigInt(1)) {
+      refreshSaleStatus();
+      // Recharger aussi les approbations
+      if (address) {
+        checkApprovals();
+      }
+    }
+  }, [confirmations]);
+
   // Fonction pour rafraîchir le statut de vente
   const refreshSaleStatus = useCallback(async () => {
     if (positionId === null || !publicClient) return;
@@ -64,21 +80,22 @@ function PositionPageContent({ id }: { id: string }) {
     }
   }, [positionId, publicClient]);
 
-  // Effet pour mettre à jour après une transaction
-  useEffect(() => {
-    if (hash) {
-      const checkTransaction = async () => {
-        try {
-          await publicClient?.waitForTransactionReceipt({ hash });
-          console.log('Transaction confirmée:', hash);
-          await refreshSaleStatus();
-        } catch (error) {
-          console.error('Erreur lors de la vérification de la transaction:', error);
-        }
-      };
-      checkTransaction();
+  // Lecture de l'approbation globale
+  const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
+    address: contractAddresses.strategyNFT,
+    abi: contractABIs.strategyNFT,
+    functionName: 'isApprovedForAll',
+    args: address ? [address, contractAddresses.strategyOne] : undefined,
+    query: {
+      enabled: Boolean(address)
     }
-  }, [hash, publicClient, refreshSaleStatus]);
+  });
+
+  // Fonction pour vérifier les approbations
+  const checkApprovals = useCallback(async () => {
+    if (!address || !publicClient) return;
+    await refetchApproval();
+  }, [address, publicClient, refetchApproval]);
 
   // Effet pour charger le statut de vente initial
   useEffect(() => {
@@ -226,17 +243,6 @@ function PositionPageContent({ id }: { id: string }) {
       }
     }
   }, [userPositions, userNFTs, strategyId, address, isLoadingPositions, isLoadingNFTs]);
-
-  // Lecture de l'approbation globale
-  const { data: isApprovedForAll } = useReadContract({
-    address: contractAddresses.strategyNFT,
-    abi: contractABIs.strategyNFT,
-    functionName: 'isApprovedForAll',
-    args: address ? [address, contractAddresses.strategyOne] : undefined,
-    query: {
-      enabled: Boolean(address)
-    }
-  });
 
   // Fonction pour approuver
   const handleApprove = async () => {
