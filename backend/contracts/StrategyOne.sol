@@ -46,6 +46,7 @@ interface IStrategyNFT {
     function ownerOf(uint256 positionId) external view returns (address);
     function transferFrom(address from, address to, uint256 tokenId) external;
     function getApproved(uint256 tokenId) external view returns (address);
+    function approve(address to, uint256 tokenId) external;
 }
 
 /// @title StrategyOne
@@ -584,26 +585,26 @@ contract StrategyOne is ReentrancyGuard {
 
     // ::::::::::::: NFT MARKET ::::::::::::: // 
 
-    /// @notice Lists an NFT for sale
-    /// @param allPositionsId Global ID of the position
-    /// @param price Sale price in gUSDC
-    /// @dev Protected against reentrancy
-    function listNFTForSale(uint256 allPositionsId, uint256 price) external nonReentrant {
-        require(price > 0, "Price must be greater than 0");
-        
-        Position storage position = allPositions[allPositionsId];
-        require(position.owner == msg.sender, "Not position owner");
-        require(position.isActive, "Position not active");
+    /// @notice Liste un NFT à vendre
+    /// @param _positionId L'ID de la position à vendre
+    /// @param _price Le prix de vente en gUSDC
+    function listNFTForSale(uint256 _positionId, uint256 _price) external nonReentrant {
+        uint256 NFTid = _positionId + 1;
+        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not the owner");
+        require(_price > 0, "Price must be > 0");
+        require(allPositions[_positionId].isActive, "Position not active");
+        require(!nftSales[_positionId].isOnSale, "Already on sale");
 
-        uint256 NFTid = allPositionsId + 1;
-        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not NFT owner");
+        // Approuver le contrat pour le transfert du NFT
+        IStrategyNFT(nftContract).approve(address(this), NFTid);
 
-        nftSales[allPositionsId] = NFTSale({
-            salePrice: price,
+        // Mettre le NFT en vente
+        nftSales[_positionId] = NFTSale({
+            salePrice: _price,
             isOnSale: true
         });
 
-        emit NFTListedForSale(NFTid, allPositionsId, price, msg.sender);
+        emit NFTListedForSale(NFTid, _positionId, _price, msg.sender);
     }
 
     /// @notice Cancels the sale of an NFT
