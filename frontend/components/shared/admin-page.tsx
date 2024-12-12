@@ -142,7 +142,7 @@ export function AdminPage() {
       )}
       
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold tracking-tight">Tableau de bord CGP</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Administration du protocole SimpliFi</h2>
         <Link href="/dapp/mapage/fees">
           <Button
             variant="outline"
