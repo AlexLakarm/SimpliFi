@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient, useWriteContract, useAccount } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -61,7 +61,7 @@ export default function CGPFees() {
         <Button
           variant="outline" 
           size="sm"
-          className="flex items-center gap-2 group hover:bg-accent mt-14"
+          className="flex items-center gap-2 group hover:bg-accent mb-2"
         >
           <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
           Retour
@@ -69,7 +69,12 @@ export default function CGPFees() {
       </Link>
       <Card>
         <CardHeader>
-          <CardTitle>Gestion de vos frais</CardTitle>
+          <CardTitle>Gestion des frais générés par vos clients</CardTitle>
+          <CardDescription>
+            <span className="text-sm text-muted-foreground">
+              Le bouton "Retirer" apparait uniquement lorsque les frais à maturité sont disponibles.
+            </span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4">

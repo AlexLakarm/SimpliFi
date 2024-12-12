@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient, useWriteContract, useAccount } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -67,7 +67,12 @@ export default function AdminFees() {
       </Link>
       <Card>
         <CardHeader>
-          <CardTitle>Gestion des frais de protocole</CardTitle>
+          <CardTitle>Gestion des frais du protocole SimpliFi</CardTitle>
+          <CardDescription>
+            <span className="text-sm text-muted-foreground">
+              Le bouton "Retirer" apparait uniquement lorsque les frais à maturité sont disponibles.
+            </span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4">

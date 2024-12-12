@@ -9,6 +9,8 @@ import { isAddress } from 'viem';
 import { groupBy } from 'lodash';
 import { useRole } from "@/hooks/useRole";
 import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 
 // Type pour les clients retournés par le contrat
 type ClientInfo = {
@@ -139,7 +141,19 @@ export function AdminPage() {
         </div>
       )}
       
-      <h2 className="text-3xl font-bold tracking-tight">Administration</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold tracking-tight">Tableau de bord CGP</h2>
+        <Link href="/dapp/mapage/fees">
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex items-center gap-2 group hover:bg-green-800 border-green-800"
+          >
+            Gestion des frais
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </Button>
+        </Link>
+      </div>
       
       {/* Section Actions CGP */}
       <div className="grid gap-6 w-full">
