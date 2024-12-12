@@ -8,6 +8,8 @@ import { contractAddresses, contractABIs } from "@/app/config/contracts";
 import { isAddress } from 'viem';
 import { useRole } from "@/hooks/useRole";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 export function CGPPage() {
   const { address } = useAccount();
@@ -93,6 +95,16 @@ export function CGPPage() {
       )}
       
       <h2 className="text-3xl font-bold tracking-tight">Gestion des Clients</h2>
+      <Link href="/dapp/mapage/fees">
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-2 group hover:bg-accent mt-14"
+            >
+              <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+              Gestion des frais
+            </Button>
+          </Link>
       
       {/* Section Actions Clients */}
       <div className="grid gap-6 w-full">
