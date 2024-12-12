@@ -133,7 +133,7 @@ const PendlePage = () => {
                 {/* Section commune pour l'adresse du token */}
                 <div className="space-y-4">
                     <h4 className="font-semibold">Rechercher les valeurs actuelles de Yield, Rate et Duration pour un PT token</h4>
-                    <p className="text-sm text-muted-foreground">pt gusdc actuellement déployé : 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512</p>
+                    <p className="text-sm text-muted-foreground">PT gusdc actuellement déployé sur Holesky : 0xd5F274E114b72E7DA9a92e89885E79EA030dc112</p>
                     <div className="flex gap-4">
                         <Input
                             placeholder="PT Token Address"
