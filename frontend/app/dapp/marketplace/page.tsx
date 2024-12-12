@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react";
-import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
+import { useEffect, useState } from "react";
+import { useAccount, usePublicClient, useWriteContract, useTransactionConfirmations, useWaitForTransactionReceipt } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -26,18 +26,64 @@ type PositionForSale = {
 };
 
 export default function Marketplace() {
-  const [positionsForSale, setPositionsForSale] = useState<PositionForSale[]>([]);
-  const [isPending, setIsPending] = useState(false);
   const { address } = useAccount();
+  const [positionsForSale, setPositionsForSale] = useState<PositionForSale[]>([]);
+  const [approvals, setApprovals] = useState<{ [key: string]: boolean }>({});
+  const [gUSDCAddress, setGUSDCAddress] = useState<`0x${string}`>();
   const publicClient = usePublicClient();
-  const { writeContract, data: hash, error } = useWriteContract();
 
-  // Hook pour les toasts de transaction
+  // Gestion des transactions
+  const { writeContract, data: hash, error, isPending } = useWriteContract();
+  
+  // Attendre la réception de la transaction
+  const { isLoading: isWaitingReceipt, isSuccess: isReceived } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  // Attendre les confirmations
+  const { data: confirmations, isLoading: isWaitingConfirmation } = useTransactionConfirmations({
+    hash,
+  });
+
+  // Utilisation du hook de toast pour suivre la transaction
   useTransactionToast(hash, error);
 
-  const fetchPositionsForSale = useCallback(async () => {
-    if (!publicClient) return;
+  // Effet pour rafraîchir les données après une transaction confirmée
+  useEffect(() => {
+    if (isReceived) {
+      // Recharger les positions
+      loadPositions();
+      // Vérifier les approbations
+      if (positionsForSale.length > 0) {
+        positionsForSale.forEach(item => 
+          checkApproval(item.position.allPositionsId, item.salePrice)
+        );
+      }
+    }
+  }, [isReceived]);
 
+  // Récupérer l'adresse gUSDC
+  useEffect(() => {
+    const fetchGUSDCAddress = async () => {
+      if (!publicClient) return;
+      try {
+        const address = await publicClient.readContract({
+          address: contractAddresses.router,
+          abi: contractABIs.router,
+          functionName: 'gUSDC',
+        }) as `0x${string}`;
+        setGUSDCAddress(address);
+      } catch (error) {
+        console.error('Erreur lors de la récupération de l\'adresse gUSDC:', error);
+      }
+    };
+    fetchGUSDCAddress();
+  }, [publicClient]);
+
+  // Charger les positions
+  const loadPositions = async () => {
+    if (!publicClient) return;
+    
     try {
       const totalPositions = await publicClient.readContract({
         address: contractAddresses.strategyOne,
@@ -45,141 +91,91 @@ export default function Marketplace() {
         functionName: 'getAllActivePositionsCount',
       }) as bigint;
 
-      console.log('Total positions:', Number(totalPositions));
       const newPositionsForSale = [];
-
       for (let i = 0; i < Number(totalPositions); i++) {
-        // Récupérer d'abord la position pour vérifier si elle est active
-        const positionData = await publicClient.readContract({
+        const position = await publicClient.readContract({
           address: contractAddresses.strategyOne,
           abi: contractABIs.strategyOne,
           functionName: 'allPositions',
-          args: [BigInt(i)],
-        }) as readonly [bigint, bigint, bigint, bigint, bigint, boolean, bigint, `0x${string}`];
+          args: [BigInt(i)]
+        }) as any;
 
-        const position: Position = {
-          gUSDCAmount: positionData[0],
-          ptAmount: positionData[1],
-          entryDate: positionData[2],
-          maturityDate: positionData[3],
-          exitDate: positionData[4],
-          isActive: positionData[5],
-          allPositionsId: positionData[6],
-          owner: positionData[7]
-        };
-
-        if (position.isActive) {
-          // Si la position est active, vérifier si elle est en vente
-          const saleInfo = await publicClient.readContract({
-            address: contractAddresses.strategyOne,
-            abi: contractABIs.strategyOne,
-            functionName: 'nftSales',
-            args: [BigInt(i)],
-          }) as readonly [bigint, boolean];
-
-          console.log(`Position ${i} (NFT #${i + 1}):`, {
-            position,
-            saleInfo: {
-              price: saleInfo[0].toString(),
-              isOnSale: saleInfo[1]
-            }
+        const sale = await publicClient.readContract({
+          address: contractAddresses.strategyOne,
+          abi: contractABIs.strategyOne,
+          functionName: 'nftSales',
+          args: [BigInt(i)]
+        }) as [bigint, boolean];
+        
+        if (sale[1] && position[5]) { // isOnSale && isActive
+          const NFTid = BigInt(i) + BigInt(1);
+          newPositionsForSale.push({
+            position: {
+              gUSDCAmount: position[0],
+              ptAmount: position[1],
+              entryDate: position[2],
+              maturityDate: position[3],
+              exitDate: position[4],
+              isActive: position[5],
+              allPositionsId: position[6],
+              owner: position[7],
+            },
+            NFTid,
+            salePrice: sale[0]
           });
-
-          const [salePrice, isOnSale] = saleInfo;
-
-          if (isOnSale && salePrice > BigInt(0)) {
-            const NFTid = BigInt(i) + BigInt(1);
-            newPositionsForSale.push({
-              position,
-              NFTid,
-              salePrice
-            });
-          }
         }
       }
-
-      console.log('Final positions for sale:', newPositionsForSale);
       setPositionsForSale(newPositionsForSale);
     } catch (error) {
-      console.error('Error fetching positions for sale:', error);
+      console.error('Erreur lors du chargement des positions:', error);
     }
+  };
+
+  useEffect(() => {
+    loadPositions();
   }, [publicClient]);
 
-  // Effet pour charger les positions initiales
-  useEffect(() => {
-    fetchPositionsForSale();
-  }, [fetchPositionsForSale]);
-
-  // Effet pour écouter les événements de vente
-  useEffect(() => {
-    if (!publicClient) return;
-
-    const unwatchListed = publicClient.watchContractEvent({
-      address: contractAddresses.strategyOne,
-      abi: contractABIs.strategyOne,
-      eventName: 'NFTListedForSale',
-      onLogs: async () => {
-        await fetchPositionsForSale();
-      }
-    });
-
-    const unwatchCanceled = publicClient.watchContractEvent({
-      address: contractAddresses.strategyOne,
-      abi: contractABIs.strategyOne,
-      eventName: 'NFTSaleCanceled',
-      onLogs: async () => {
-        await fetchPositionsForSale();
-      }
-    });
-
-    const unwatchSold = publicClient.watchContractEvent({
-      address: contractAddresses.strategyOne,
-      abi: contractABIs.strategyOne,
-      eventName: 'NFTSold',
-      onLogs: async () => {
-        await fetchPositionsForSale();
-      }
-    });
-
-    return () => {
-      unwatchListed();
-      unwatchCanceled();
-      unwatchSold();
-    };
-  }, [publicClient, fetchPositionsForSale]);
-
-  const handleBuyNFT = async (NFTid: bigint, salePrice: bigint) => {
-    if (!address) return;
+  // Vérifier l'approbation
+  const checkApproval = async (positionId: bigint, salePrice: bigint) => {
+    if (!address || !gUSDCAddress || !publicClient) return;
 
     try {
-      setIsPending(true);
-      const positionId = NFTid - BigInt(1);
+      const allowance = await publicClient.readContract({
+        address: gUSDCAddress,
+        abi: contractABIs.gUSDC,
+        functionName: 'allowance',
+        args: [address, contractAddresses.strategyOne]
+      }) as bigint;
       
-      console.log('Tentative d\'achat:', {
-        NFTid: Number(NFTid),
-        positionId: Number(positionId),
-        salePrice: salePrice.toString()
-      });
+      setApprovals(prev => ({
+        ...prev,
+        [positionId.toString()]: allowance >= salePrice
+      }));
+    } catch (error) {
+      console.error('Erreur lors de la vérification de l\'approbation:', error);
+    }
+  };
 
-      // Récupérer l'adresse gUSDC via le router Pendle
-      const gUSDCAddress = await publicClient?.readContract({
-        address: contractAddresses.router,
-        abi: contractABIs.router,
-        functionName: 'gUSDC',
-      }) as `0x${string}`;
-
-      console.log('Adresse gUSDC:', gUSDCAddress);
-      console.log('Approbation des gUSDC...');
-
-      await writeContract({
+  // Gérer l'approbation
+  const handleApprove = async (salePrice: bigint) => {
+    if (!gUSDCAddress) return;
+    
+    try {
+      writeContract({
         address: gUSDCAddress,
         abi: contractABIs.gUSDC,
         functionName: 'approve',
         args: [contractAddresses.strategyOne, salePrice],
       });
+    } catch (error) {
+      console.error('Erreur lors de l\'approbation:', error);
+    }
+  };
 
-      console.log('Achat du NFT...');
-      await writeContract({
+  // Gérer l'achat
+  const handleBuyNFT = async (positionId: bigint) => {
+    try {
+      writeContract({
         address: contractAddresses.strategyOne,
         abi: contractABIs.strategyOne,
         functionName: 'buyNFT',
@@ -187,27 +183,37 @@ export default function Marketplace() {
       });
     } catch (error) {
       console.error('Erreur lors de l\'achat:', error);
-    } finally {
-      setIsPending(false);
     }
   };
 
-  // Fonction pour formater les montants
+  // Gérer le clic sur le bouton
+  const handleButtonClick = (NFTid: bigint, salePrice: bigint) => {
+    const positionId = NFTid - BigInt(1);
+    const isApproved = approvals[positionId.toString()];
+
+    if (!isApproved) {
+      handleApprove(salePrice);
+    } else {
+      handleBuyNFT(positionId);
+    }
+  };
+
+  // Fonctions de formatage
   const formatAmount = (amount: bigint) => {
     return (Number(amount) / 1e6).toFixed(2);
   };
 
-  // Fonction pour formater les dates
   const formatDate = (timestamp: bigint) => {
     const date = new Date(Number(timestamp) * 1000);
     return format(date, 'dd/MM/yyyy HH:mm');
   };
 
-  // Fonction pour calculer le temps restant
   const getRemainingTime = (maturityDate: bigint) => {
     const date = new Date(Number(maturityDate) * 1000);
     return formatDistanceToNow(date, { addSuffix: true, locale: fr });
   };
+
+  const isTransactionInProgress = isPending || isWaitingReceipt || isWaitingConfirmation;
 
   return (
     <div className="space-y-4 max-w-full">
@@ -244,12 +250,16 @@ export default function Marketplace() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {address !== item.position.owner && (
-                    <Button
-                      onClick={() => handleBuyNFT(item.NFTid, item.salePrice)}
-                      disabled={isPending}
+                    <Button 
+                      onClick={() => handleButtonClick(item.NFTid, item.salePrice)}
+                      disabled={isTransactionInProgress}
                       className="w-full"
                     >
-                      {isPending ? "Transaction..." : "Acheter"}
+                      {isTransactionInProgress ? "Transaction en cours..." : (
+                        approvals[item.position.allPositionsId.toString()]
+                          ? "Acheter"
+                          : "Autoriser la dépense"
+                      )}
                     </Button>
                   )}
                 </div>
