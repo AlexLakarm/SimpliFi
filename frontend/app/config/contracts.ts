@@ -4004,12 +4004,12 @@ export const contractABIs = {
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "allPositionsId",
+          "name": "_positionId",
           "type": "uint256"
         },
         {
           "internalType": "uint256",
-          "name": "price",
+          "name": "_price",
           "type": "uint256"
         }
       ],
@@ -4229,14 +4229,26 @@ export const contractABIs = {
     {
       "inputs": [],
       "name": "withdrawCGPFees",
-      "outputs": [],
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "withdrawableFees",
+          "type": "uint256"
+        }
+      ],
       "stateMutability": "nonpayable",
       "type": "function"
     },
     {
       "inputs": [],
       "name": "withdrawProtocolFees",
-      "outputs": [],
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "withdrawableFees",
+          "type": "uint256"
+        }
+      ],
       "stateMutability": "nonpayable",
       "type": "function"
     },
