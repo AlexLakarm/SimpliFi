@@ -11,6 +11,7 @@ import { useRole } from "@/hooks/useRole";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useTransactionToast } from "@/hooks/use-transaction-toast";
 
 // Type pour les clients retournés par le contrat
 type ClientInfo = {
@@ -35,7 +36,7 @@ export function AdminPage() {
   }, []);
 
   // Lecture de la liste des CGP
-  const { data: registeredCGPs } = useReadContract({
+  const { data: registeredCGPs, refetch: refetchCGPs } = useReadContract({
     address: contractAddresses.roleControl,
     abi: contractABIs.roleControl,
     functionName: 'getAllCGPs',
@@ -49,7 +50,7 @@ export function AdminPage() {
   }, [registeredCGPs]);
 
   // Lecture de la liste des clients
-  const { data: registeredClients } = useReadContract({
+  const { data: registeredClients, refetch: refetchClients } = useReadContract({
     address: contractAddresses.roleControl,
     abi: contractABIs.roleControl,
     functionName: 'getAllClients',
@@ -63,7 +64,18 @@ export function AdminPage() {
   }, [registeredClients]);
 
   // Écriture du contrat pour ajouter/supprimer un CGP
-  const { writeContract, isPending } = useWriteContract();
+  const { writeContract, data: hash, error, isPending } = useWriteContract();
+
+  // Utilisation du hook de toast pour les transactions
+  const { isSuccess } = useTransactionToast(hash, error);
+
+  // Rafraîchir les listes après une transaction réussie
+  useEffect(() => {
+    if (isSuccess) {
+      refetchCGPs();
+      refetchClients();
+    }
+  }, [isSuccess, refetchCGPs, refetchClients]);
 
   // Fonction pour vérifier si une adresse est valide
   const isValidAddress = (address: string): boolean => {
