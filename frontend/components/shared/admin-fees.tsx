@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react";
-import { usePublicClient, useWriteContract, useAccount } from 'wagmi';
+import { usePublicClient, useWriteContract } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,22 +55,24 @@ export default function AdminFees() {
 
   return (
     <div className="container mx-auto p-4">
-      <Link href="/dapp/mapage">
-        <Button
-          variant="outline" 
-          size="sm"
-          className="flex items-center gap-2 group hover:bg-accent mb-2"
-        >
-          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-          Retour
-        </Button>
-      </Link>
+      <div className="mb-2">
+        <Link href="/dapp/mapage">
+          <Button
+            variant="outline" 
+            size="sm"
+            className="flex items-center gap-2 group hover:bg-accent"
+          >
+            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+            Retour
+          </Button>
+        </Link>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Gestion des frais du protocole SimpliFi</CardTitle>
           <CardDescription>
             <span className="text-sm text-muted-foreground">
-              Le bouton "Retirer" apparait uniquement lorsque les frais à maturité sont disponibles.
+              Le bouton &quot;Retirer&quot; apparait uniquement lorsque les frais à maturité sont disponibles.
             </span>
           </CardDescription>
         </CardHeader>
