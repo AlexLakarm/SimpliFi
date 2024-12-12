@@ -1,23 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react";
-import { useAccount, usePublicClient, useWriteContract, useTransactionConfirmations, useWaitForTransactionReceipt } from 'wagmi';
+import { useEffect, useState, useCallback } from "react";
+import { useAccount, usePublicClient, useWriteContract, useTransactionConfirmations } from 'wagmi';
 import { contractAddresses, contractABIs } from '@/app/config/contracts';
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Button } from "@/components/ui/button";
 import { useTransactionToast } from "@/hooks/use-transaction-toast";
-
-type Position = {
-  gUSDCAmount: bigint;
-  ptAmount: bigint;
-  entryDate: bigint;
-  maturityDate: bigint;
-  exitDate: bigint;
-  isActive: boolean;
-  allPositionsId: bigint;
-  owner: `0x${string}`;
-};
+import { Position } from "@/app/types";
 
 type PositionForSale = {
   position: Position;
@@ -34,7 +24,7 @@ export default function Marketplace() {
 
   // Gestion des transactions
   const { writeContract, data: hash, error, isPending } = useWriteContract();
-  
+
   // Attendre les confirmations
   const { data: confirmations, isLoading: isWaitingConfirmation } = useTransactionConfirmations({
     hash,
@@ -43,19 +33,94 @@ export default function Marketplace() {
   // Utilisation du hook de toast pour suivre la transaction
   useTransactionToast(hash, error);
 
+  // Vérifier l'approbation
+  const checkApproval = useCallback(async (positionId: bigint, salePrice: bigint) => {
+    if (!address || !gUSDCAddress || !publicClient) return;
+
+    try {
+      const allowance = await publicClient.readContract({
+        address: gUSDCAddress,
+        abi: contractABIs.gUSDC,
+        functionName: 'allowance',
+        args: [address, contractAddresses.strategyOne]
+      }) as bigint;
+      
+      setApprovals(prev => ({
+        ...prev,
+        [positionId.toString()]: allowance >= salePrice
+      }));
+    } catch (error) {
+      console.error('Erreur lors de la vérification de l\'approbation:', error);
+    }
+  }, [address, gUSDCAddress, publicClient]);
+
+  // Charger les positions
+  const loadPositions = useCallback(async () => {
+    if (!publicClient) return;
+    
+    try {
+      const totalPositions = await publicClient.readContract({
+        address: contractAddresses.strategyOne,
+        abi: contractABIs.strategyOne,
+        functionName: 'getAllActivePositionsCount',
+      }) as bigint;
+
+      const newPositionsForSale = [];
+      for (let i = 0; i < Number(totalPositions); i++) {
+        const position = await publicClient.readContract({
+          address: contractAddresses.strategyOne,
+          abi: contractABIs.strategyOne,
+          functionName: 'allPositions',
+          args: [BigInt(i)]
+        }) as readonly [bigint, bigint, bigint, bigint, bigint, boolean, bigint, `0x${string}`];
+
+        const positionData: Position = {
+          gUSDCAmount: position[0],
+          ptAmount: position[1],
+          entryDate: position[2],
+          maturityDate: position[3],
+          exitDate: position[4],
+          isActive: position[5],
+          allPositionsId: position[6],
+          owner: position[7]
+        };
+
+        const sale = await publicClient.readContract({
+          address: contractAddresses.strategyOne,
+          abi: contractABIs.strategyOne,
+          functionName: 'nftSales',
+          args: [BigInt(i)]
+        }) as [bigint, boolean];
+        
+        if (sale[1] && position[5]) {
+          const NFTid = BigInt(i) + BigInt(1);
+          newPositionsForSale.push({
+            position: positionData,
+            NFTid,
+            salePrice: sale[0]
+          });
+        }
+      }
+      setPositionsForSale(newPositionsForSale);
+    } catch (error) {
+      console.error('Erreur lors du chargement des positions:', error);
+    }
+  }, [publicClient]);
+
   // Effet pour rafraîchir les données après une transaction confirmée
   useEffect(() => {
     if (confirmations === BigInt(1)) {
-      // Recharger les positions
       loadPositions();
-      // Vérifier les approbations
-      if (positionsForSale.length > 0) {
-        positionsForSale.forEach(item => 
-          checkApproval(item.position.allPositionsId, item.salePrice)
-        );
-      }
+      positionsForSale.forEach(item => 
+        checkApproval(item.position.allPositionsId, item.salePrice)
+      );
     }
-  }, [confirmations]);
+  }, [confirmations, loadPositions, checkApproval, positionsForSale]);
+
+  // Effet pour charger les positions initiales
+  useEffect(() => {
+    loadPositions();
+  }, [loadPositions]);
 
   // Récupérer l'adresse gUSDC
   useEffect(() => {
@@ -74,82 +139,6 @@ export default function Marketplace() {
     };
     fetchGUSDCAddress();
   }, [publicClient]);
-
-  // Charger les positions
-  const loadPositions = async () => {
-    if (!publicClient) return;
-    
-    try {
-      const totalPositions = await publicClient.readContract({
-        address: contractAddresses.strategyOne,
-        abi: contractABIs.strategyOne,
-        functionName: 'getAllActivePositionsCount',
-      }) as bigint;
-
-      const newPositionsForSale = [];
-      for (let i = 0; i < Number(totalPositions); i++) {
-        const position = await publicClient.readContract({
-          address: contractAddresses.strategyOne,
-          abi: contractABIs.strategyOne,
-          functionName: 'allPositions',
-          args: [BigInt(i)]
-        }) as any;
-
-        const sale = await publicClient.readContract({
-          address: contractAddresses.strategyOne,
-          abi: contractABIs.strategyOne,
-          functionName: 'nftSales',
-          args: [BigInt(i)]
-        }) as [bigint, boolean];
-        
-        if (sale[1] && position[5]) { // isOnSale && isActive
-          const NFTid = BigInt(i) + BigInt(1);
-          newPositionsForSale.push({
-            position: {
-              gUSDCAmount: position[0],
-              ptAmount: position[1],
-              entryDate: position[2],
-              maturityDate: position[3],
-              exitDate: position[4],
-              isActive: position[5],
-              allPositionsId: position[6],
-              owner: position[7],
-            },
-            NFTid,
-            salePrice: sale[0]
-          });
-        }
-      }
-      setPositionsForSale(newPositionsForSale);
-    } catch (error) {
-      console.error('Erreur lors du chargement des positions:', error);
-    }
-  };
-
-  useEffect(() => {
-    loadPositions();
-  }, [publicClient]);
-
-  // Vérifier l'approbation
-  const checkApproval = async (positionId: bigint, salePrice: bigint) => {
-    if (!address || !gUSDCAddress || !publicClient) return;
-
-    try {
-      const allowance = await publicClient.readContract({
-        address: gUSDCAddress,
-        abi: contractABIs.gUSDC,
-        functionName: 'allowance',
-        args: [address, contractAddresses.strategyOne]
-      }) as bigint;
-      
-      setApprovals(prev => ({
-        ...prev,
-        [positionId.toString()]: allowance >= salePrice
-      }));
-    } catch (error) {
-      console.error('Erreur lors de la vérification de l\'approbation:', error);
-    }
-  };
 
   // Gérer l'approbation
   const handleApprove = async (salePrice: bigint) => {
