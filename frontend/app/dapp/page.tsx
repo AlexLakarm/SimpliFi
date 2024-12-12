@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const PT_TOKEN_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const PT_TOKEN_ADDRESS = "0xd5F274E114b72E7DA9a92e89885E79EA030dc112";
 
 export default function StrategyPage() {
   const router = useRouter();
