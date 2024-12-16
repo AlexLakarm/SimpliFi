@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect, useMemo } from "react";
-import { useWriteContract, useReadContract } from 'wagmi';
+import { useWriteContract, useReadContract, useAccount } from 'wagmi';
 import { contractAddresses, contractABIs } from "@/app/config/contracts";
 import { isAddress } from 'viem';
 import { groupBy } from 'lodash';
@@ -11,7 +11,6 @@ import { useRole } from "@/hooks/useRole";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useTransactionToast } from "@/hooks/use-transaction-toast";
 
 // Type pour les clients retournés par le contrat
 type ClientInfo = {
@@ -23,6 +22,7 @@ type ClientInfo = {
 export function AdminPage() {
   const router = useRouter();
   const { role } = useRole();
+  const { address } = useAccount();
   const [isClient, setIsClient] = useState(false);
   const [newCGPAddress, setNewCGPAddress] = useState('');
   const [cgpToDelete, setCgpToDelete] = useState('');
@@ -36,7 +36,7 @@ export function AdminPage() {
   }, []);
 
   // Lecture de la liste des CGP
-  const { data: registeredCGPs, refetch: refetchCGPs } = useReadContract({
+  const { data: registeredCGPs } = useReadContract({
     address: contractAddresses.roleControl,
     abi: contractABIs.roleControl,
     functionName: 'getAllCGPs',
@@ -50,32 +50,31 @@ export function AdminPage() {
   }, [registeredCGPs]);
 
   // Lecture de la liste des clients
-  const { data: registeredClients, refetch: refetchClients } = useReadContract({
+  const { data: registeredClients, refetch: refetchClients, isLoading: isLoadingClients, isError: isErrorClients, error: clientError } = useReadContract({
     address: contractAddresses.roleControl,
     abi: contractABIs.roleControl,
     functionName: 'getAllClients',
+    account: address,
   });
 
   // Mise à jour de la liste des clients
   useEffect(() => {
+    console.log('État du chargement des clients:', {
+      isLoadingClients,
+      isErrorClients,
+      clientError,
+      registeredClients
+    });
+
     if (registeredClients) {
-      setClientList(registeredClients as ClientInfo[]);
+      const clientsArray = registeredClients as ClientInfo[];
+      console.log('Clients formatés:', clientsArray);
+      setClientList(clientsArray);
     }
-  }, [registeredClients]);
+  }, [registeredClients, isLoadingClients, isErrorClients, clientError]);
 
   // Écriture du contrat pour ajouter/supprimer un CGP
-  const { writeContract, data: hash, error, isPending } = useWriteContract();
-
-  // Utilisation du hook de toast pour les transactions
-  const { isSuccess } = useTransactionToast(hash, error);
-
-  // Rafraîchir les listes après une transaction réussie
-  useEffect(() => {
-    if (isSuccess) {
-      refetchCGPs();
-      refetchClients();
-    }
-  }, [isSuccess, refetchCGPs, refetchClients]);
+  const { writeContract, isPending } = useWriteContract();
 
   // Fonction pour vérifier si une adresse est valide
   const isValidAddress = (address: string): boolean => {
@@ -90,24 +89,38 @@ export function AdminPage() {
   const handleAddCGP = async () => {
     if (!newCGPAddress || !isValidAddress(newCGPAddress)) return;
 
-    writeContract({
-      address: contractAddresses.roleControl,
-      abi: contractABIs.roleControl,
-      functionName: 'addCGP',
-      args: [newCGPAddress as `0x${string}`],
-    });
+    try {
+      await writeContract({
+        address: contractAddresses.roleControl,
+        abi: contractABIs.roleControl,
+        functionName: 'addCGP',
+        args: [newCGPAddress as `0x${string}`],
+      });
+      
+      // Rafraîchir la liste des clients après l'ajout
+      await refetchClients();
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout du CGP:', error);
+    }
   };
 
   // Fonction pour supprimer un CGP
   const handleDeleteCGP = async () => {
     if (!cgpToDelete || !isValidAddress(cgpToDelete)) return;
 
-    writeContract({
-      address: contractAddresses.roleControl,
-      abi: contractABIs.roleControl,
-      functionName: 'deleteCGP',
-      args: [cgpToDelete as `0x${string}`],
-    });
+    try {
+      await writeContract({
+        address: contractAddresses.roleControl,
+        abi: contractABIs.roleControl,
+        functionName: 'deleteCGP',
+        args: [cgpToDelete as `0x${string}`],
+      });
+      
+      // Rafraîchir la liste des clients après la suppression
+      await refetchClients();
+    } catch (error) {
+      console.error('Erreur lors de la suppression du CGP:', error);
+    }
   };
 
   // Filtrer les CGPs
@@ -120,6 +133,13 @@ export function AdminPage() {
 
   // Filtrer les clients par CGP et par adresse client
   const filteredClientsByCGP = useMemo(() => {
+    console.log('Filtrage des clients:', {
+      clientListLength: clientList.length,
+      clientList,
+      cgpSearch,
+      clientSearch
+    });
+
     let filtered = clientList;
 
     // Filtrer par adresse client si une recherche est active
@@ -131,6 +151,7 @@ export function AdminPage() {
 
     // Grouper par CGP
     const grouped = groupBy(filtered, 'cgpAddress');
+    console.log('Clients groupés:', grouped);
     
     // Filtrer les CGPs si une recherche CGP est active
     let entries = Object.entries(grouped);
@@ -140,6 +161,7 @@ export function AdminPage() {
       );
     }
 
+    console.log('Résultat final:', entries);
     return entries.sort(([cgpA], [cgpB]) => cgpA.localeCompare(cgpB));
   }, [clientList, cgpSearch, clientSearch]);
 
@@ -303,7 +325,9 @@ export function AdminPage() {
               )}
             </h3>
             <div className="space-y-6">
-              {filteredClientsByCGP.length > 0 ? (
+              {isLoadingClients ? (
+                <p className="text-muted-foreground">Chargement des clients...</p>
+              ) : filteredClientsByCGP.length > 0 ? (
                 filteredClientsByCGP.map(([cgpAddress, clients]) => (
                   <div key={cgpAddress} className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
