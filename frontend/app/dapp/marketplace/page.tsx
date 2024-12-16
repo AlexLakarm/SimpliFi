@@ -111,16 +111,24 @@ export default function Marketplace() {
   useEffect(() => {
     if (confirmations === BigInt(1)) {
       loadPositions();
-      positionsForSale.forEach(item => 
-        checkApproval(item.position.allPositionsId, item.salePrice)
-      );
+      // Vérifier toutes les approbations après une transaction confirmée
+      positionsForSale.forEach(item => {
+        checkApproval(item.position.allPositionsId, item.salePrice);
+      });
     }
   }, [confirmations, loadPositions, checkApproval, positionsForSale]);
 
   // Effet pour charger les positions initiales
   useEffect(() => {
-    loadPositions();
-  }, [loadPositions]);
+    const init = async () => {
+      await loadPositions();
+      // Vérifier les approbations pour toutes les positions chargées
+      positionsForSale.forEach(item => {
+        checkApproval(item.position.allPositionsId, item.salePrice);
+      });
+    };
+    init();
+  }, [loadPositions, checkApproval, positionsForSale]);
 
   // Récupérer l'adresse gUSDC
   useEffect(() => {
