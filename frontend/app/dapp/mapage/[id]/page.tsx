@@ -41,44 +41,13 @@ function PositionPageContent({ id }: { id: string }) {
   // Hooks pour les transactions
   const { writeContract, data: hash, error } = useWriteContract();
 
-  // Hook pour les toasts de transaction
-  useTransactionToast(hash, error);
+  // Hook pour les toasts de transaction avec suivi du succès
+  const { isSuccess } = useTransactionToast(hash, error);
 
   // Suivre les confirmations de transaction
   const { data: confirmations } = useTransactionConfirmations({
     hash,
   });
-
-  // Effet pour rafraîchir après confirmation
-  useEffect(() => {
-    if (confirmations === BigInt(1)) {
-      refreshSaleStatus();
-      // Recharger aussi les approbations
-      if (address) {
-        checkApprovals();
-      }
-    }
-  }, [confirmations]);
-
-  // Fonction pour rafraîchir le statut de vente
-  const refreshSaleStatus = useCallback(async () => {
-    if (positionId === null || !publicClient) return;
-
-    try {
-      const saleData = await publicClient.readContract({
-        address: contractAddresses.strategyOne,
-        abi: contractABIs.strategyOne,
-        functionName: 'nftSales',
-        args: [BigInt(positionId)],
-      }) as [bigint, boolean];
-
-      const [price, isOnSale] = saleData;
-      console.log('Statut de vente rafraîchi:', { price: price.toString(), isOnSale });
-      setSaleInfo({ salePrice: price, isOnSale });
-    } catch (error) {
-      console.error('Erreur lors du rafraîchissement du statut de vente:', error);
-    }
-  }, [positionId, publicClient]);
 
   // Lecture de l'approbation globale
   const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
@@ -97,6 +66,50 @@ function PositionPageContent({ id }: { id: string }) {
     await refetchApproval();
   }, [address, publicClient, refetchApproval]);
 
+  // Fonction pour rafraîchir le statut de vente
+  const refreshSaleStatus = useCallback(async () => {
+    if (positionId === null || !publicClient) {
+      console.log('Impossible de rafraîchir le statut de vente : positionId ou publicClient manquant');
+      return;
+    }
+
+    try {
+      console.log('Rafraîchissement du statut de vente pour la position:', positionId);
+      const saleData = await publicClient.readContract({
+        address: contractAddresses.strategyOne,
+        abi: contractABIs.strategyOne,
+        functionName: 'nftSales',
+        args: [BigInt(positionId)],
+      }) as [bigint, boolean];
+
+      const [price, isOnSale] = saleData;
+      console.log('Nouveau statut de vente:', { price: price.toString(), isOnSale });
+      setSaleInfo({ salePrice: price, isOnSale });
+    } catch (error) {
+      console.error('Erreur lors du rafraîchissement du statut de vente:', error);
+    }
+  }, [positionId, publicClient]);
+
+  // Effet pour rafraîchir après confirmation
+  useEffect(() => {
+    if (confirmations === BigInt(1)) {
+      refreshSaleStatus();
+      // Recharger aussi les approbations
+      if (address) {
+        checkApprovals();
+      }
+    }
+  }, [confirmations, address, refreshSaleStatus, checkApprovals]);
+
+  // Effet pour rafraîchir les données après une transaction réussie
+  useEffect(() => {
+    if (isSuccess) {
+      console.log('Transaction réussie, rafraîchissement des données...');
+      refreshSaleStatus();
+      checkApprovals();
+    }
+  }, [isSuccess, refreshSaleStatus, checkApprovals]);
+
   // Effet pour charger le statut de vente initial
   useEffect(() => {
     refreshSaleStatus();
@@ -104,7 +117,12 @@ function PositionPageContent({ id }: { id: string }) {
 
   // Effet pour écouter les événements de vente
   useEffect(() => {
-    if (!publicClient || positionId === null) return;
+    if (!publicClient || positionId === null) {
+      console.log('Configuration des écouteurs impossible : publicClient ou positionId manquant');
+      return;
+    }
+
+    console.log('Configuration des écouteurs d\'événements pour la position:', positionId);
 
     const unwatchListed = publicClient.watchContractEvent({
       address: contractAddresses.strategyOne,

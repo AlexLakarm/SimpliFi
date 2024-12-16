@@ -1,13 +1,14 @@
 const hre = require("hardhat");
-const { updateAddresses } = require("../config/addresses");
+const { updateAddresses } = require("../../config/addresses");
 
 async function main() {
     // Récupérer le déployeur
     const [deployer] = await ethers.getSigners();
     console.log("Deploying contracts with the account:", deployer.address);
     console.log("Account balance:", (await deployer.provider.getBalance(deployer.address)).toString());
+    console.log("Network:", network.name);
 
-    console.log("Starting deployment...");
+    console.log("Starting deployment on Holesky...");
 
     // 1. Déploiement de gUSDC
     console.log("\n1. Deploying gUSDC...");
@@ -52,11 +53,13 @@ async function main() {
 
     try {
         // Transfert de l'ownership de PtgUSDC au Router
+        console.log("Transferring PtgUSDC ownership to Router...");
         const transferTx = await ptgUSDC.transferOwnership(router.target);
         await transferTx.wait(2);
         console.log("✓ PtgUSDC ownership transferred to Router");
 
         // Configuration de l'Oracle avec les paramètres de test
+        console.log("Configuring Oracle parameters...");
         const yield = 10; // 10% annuel
         const duration = 180 * 24 * 60 * 60; // 180 jours en secondes
         
@@ -67,6 +70,7 @@ async function main() {
         console.log(`✓ Oracle configured with ${yield}% yield and ${duration} seconds duration (${180} days)`);
 
         // Configuration du Router dans gUSDC
+        console.log("Setting Router address in gUSDC...");
         const setRouterTx = await gUSDC.setRouterAddress(router.target);
         await setRouterTx.wait(2);
         console.log("✓ Router address set in gUSDC");
@@ -76,8 +80,8 @@ async function main() {
         throw error;
     }
 
-    console.log("\nDeployment and configuration completed successfully!");
-    console.log("\nDeployed Addresses on", network.name, ":");
+    console.log("\nDeployment and configuration completed successfully on Holesky!");
+    console.log("\nDeployed Addresses:");
     console.log("gUSDC:", gUSDC.target);
     console.log("PtgUSDC:", ptgUSDC.target);
     console.log("MockPendleOracle:", oracle.target);
@@ -90,45 +94,49 @@ async function main() {
         router: router.target
     };
 
-    // Mise à jour du fichier de configuration
-    if (network.name === "holesky") {
-        updateAddresses(deployedAddresses, "holesky");
-    } else {
-        updateAddresses(deployedAddresses);
-    }
+    // Mise à jour du fichier de configuration avec les adresses Holesky
+    updateAddresses(deployedAddresses, "holesky");
     
-    // Vérification des contrats sur Etherscan si sur testnet
-    if (network.name === "holesky") {
-        console.log("\nVerifying contracts on Etherscan...");
-        try {
-            await hre.run("verify:verify", {
-                address: gUSDC.target,
-                constructorArguments: [initialSupply],
-            });
-            await hre.run("verify:verify", {
-                address: ptgUSDC.target,
-                constructorArguments: [],
-            });
-            await hre.run("verify:verify", {
-                address: oracle.target,
-                constructorArguments: [],
-            });
-            await hre.run("verify:verify", {
-                address: router.target,
-                constructorArguments: [gUSDC.target, ptgUSDC.target, oracle.target],
-            });
-            console.log("✓ All contracts verified on Etherscan");
-        } catch (error) {
-            console.error("Error during contract verification:", error);
-        }
+    // Vérification des contrats sur Etherscan
+    console.log("\nVerifying contracts on Etherscan...");
+    try {
+        console.log("Verifying gUSDC...");
+        await hre.run("verify:verify", {
+            address: gUSDC.target,
+            constructorArguments: [initialSupply],
+        });
+
+        console.log("Verifying PtgUSDC...");
+        await hre.run("verify:verify", {
+            address: ptgUSDC.target,
+            constructorArguments: [],
+        });
+
+        console.log("Verifying MockPendleOracle...");
+        await hre.run("verify:verify", {
+            address: oracle.target,
+            constructorArguments: [],
+        });
+
+        console.log("Verifying MockPendleRouter...");
+        await hre.run("verify:verify", {
+            address: router.target,
+            constructorArguments: [gUSDC.target, ptgUSDC.target, oracle.target],
+        });
+        console.log("✓ All contracts verified on Etherscan");
+    } catch (error) {
+        console.error("Error during contract verification:", error);
+        console.log("You may need to verify contracts manually");
     }
 
     return deployedAddresses;
 }
 
+// Gestion des erreurs améliorée
 main()
     .then(() => process.exit(0))
     .catch((error) => {
+        console.error("Error in deployment script:");
         console.error(error);
         process.exit(1);
-    });
+    }); 
