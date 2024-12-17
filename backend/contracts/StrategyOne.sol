@@ -22,7 +22,7 @@ interface IMockPendleRouter {
     function gUSDC() external view returns (address);
     function PTgUSDC() external view returns (address);
     function swapExactTokenForPt(address tokenIn, uint256 amountIn) external returns (uint256);
-    function redeemPyToToken(address ptToken, uint256 amountIn) external returns (uint256);
+    function redeemPyToToken(address ptToken, uint256 ptAmount) external returns (uint256);
 }
 
 /// @title IMockPendleOracle
@@ -30,6 +30,7 @@ interface IMockPendleRouter {
 interface IMockPendleOracle {
     function getDuration(address ptToken) external view returns (uint256);
     function getYield(address ptToken) external view returns (uint256);
+    function getPTRate(address ptToken) external view returns (uint256);
 }
 
 /// @title IStrategyNFT
@@ -324,6 +325,9 @@ contract StrategyOne is ReentrancyGuard {
 
         // Transfer tokens from user
         IERC20(underlyingToken).transferFrom(msg.sender, address(this), amount);
+        
+        // Reset approval before setting new amount
+        IERC20(underlyingToken).approve(router, 0);
         IERC20(underlyingToken).approve(router, amount);
 
         // Swap via Pendle Router
@@ -332,6 +336,9 @@ contract StrategyOne is ReentrancyGuard {
         // ::: CALCULATE FEES AND YIELDS ::::: // 
 
         (uint256 yieldAmount, uint256 protocolFeesAmount, uint256 cgpFeesAmount) = _calculateFees(amount, ptToken);
+
+        // Vérifier que les frais ne dépassent pas le yield
+        require(protocolFeesAmount + cgpFeesAmount <= yieldAmount, "Fees exceed yield");
 
         // Update pending fees
         protocolFees.nonMaturedFees += protocolFeesAmount;
@@ -360,12 +367,18 @@ contract StrategyOne is ReentrancyGuard {
         allPositions[currentAllPositionsId] = newPosition;
         userPositionCount[msg.sender]++;
 
+        // Calculer le yield client (en vérifiant qu'il n'y a pas d'overflow)
+        uint256 clientYield = yieldAmount;
+        if (protocolFeesAmount + cgpFeesAmount <= yieldAmount) {
+            clientYield = yieldAmount - protocolFeesAmount - cgpFeesAmount;
+        }
+
         // Store yield data
         yields[msg.sender].push(PositionYield({
             totalYield: yieldAmount,
             protocolYield: protocolFeesAmount,
             cgpYield: cgpFeesAmount,
-            clientYield: yieldAmount - protocolFeesAmount - cgpFeesAmount
+            clientYield: clientYield
         }));
 
         // Mint NFT
@@ -396,24 +409,25 @@ contract StrategyOne is ReentrancyGuard {
         uint256 protocolFeesAmount,
         uint256 cgpFeesAmount
     ) {
-        uint256 yield = IMockPendleOracle(oracle).getYield(ptToken);  // ex: 10 equals 10%
+        uint256 yield = IMockPendleOracle(oracle).getYield(ptToken);  // ex: 50 equals 50%
         uint256 duration = IMockPendleOracle(oracle).getDuration(ptToken);  // in seconds
         
-     
-        // 1. Calculate the annual yield in basis points (1 point = 0.01%)
-        uint256 annualYieldBps = yield * 100;  // 10% -> 1000 bps
+        // Utiliser une plus grande précision pour les calculs intermédiaires
+        uint256 PRECISION = 1e6;
         
-        // 2. Calculate the pro-rated yield over the duration
+        // 1. Calculate the pro-rated yield with higher precision
         uint256 daysInYear = 365;
         uint256 durationInDays = duration / (24 * 60 * 60);
-        uint256 proRatedYieldBps = (annualYieldBps * durationInDays) / daysInYear;
         
-        // 3. Calculate the amounts
-        yieldAmount = (amount * proRatedYieldBps) / 10000;  // Divided by 10000 because in bps
+        // Calculer le yield proraté avec une meilleure précision
+        uint256 proRatedYield = (yield * durationInDays * PRECISION) / (daysInYear * 100);  // Diviser par 100 pour le pourcentage
         
-        // The protocol and the CGP take their respective points from the total yield
-        protocolFeesAmount = (amount * protocolFeePoints * 100 * durationInDays) / (daysInYear * 10000);
-        cgpFeesAmount = (amount * cgpFeePoints * 100 * durationInDays) / (daysInYear * 10000);
+        // 2. Calculate yield amount
+        yieldAmount = (amount * proRatedYield) / PRECISION;
+        
+        // 3. Calculate fees from yield amount (maximum 1% chacun du yield)
+        protocolFeesAmount = (yieldAmount * protocolFeePoints) / 10000;  // Diviser par 10000 car les points sont en 0.01%
+        cgpFeesAmount = (yieldAmount * cgpFeePoints) / 10000;  // Diviser par 10000 car les points sont en 0.01%
         
         return (yieldAmount, protocolFeesAmount, cgpFeesAmount);
     }
@@ -459,6 +473,8 @@ contract StrategyOne is ReentrancyGuard {
         // Update state before external interactions
         position.isActive = false;
         position.exitDate = block.timestamp;
+        userPositions[msg.sender][userPositionId].isActive = false;
+        userPositions[msg.sender][userPositionId].exitDate = block.timestamp;
         userPositionCount[msg.sender]--;
         allActivePositionsCount--;
 
@@ -469,11 +485,12 @@ contract StrategyOne is ReentrancyGuard {
         cgpFees[clientCGP].maturedNonWithdrawnFees += positionYield.cgpYield;
         cgpFees[clientCGP].nonMaturedFees -= positionYield.cgpYield;
 
-        // Approve PT tokens for redemption
+        // Reset approval before setting new amount
+        IERC20(ptToken).approve(router, 0);
         IERC20(ptToken).approve(router, position.ptAmount);
 
         // External interactions (last step)
-        IMockPendleRouter(router).redeemPyToToken(underlyingToken, position.maturityDate);
+        IMockPendleRouter(router).redeemPyToToken(ptToken, position.ptAmount);
 
         // Calculate received amount
         uint256 balanceAfter = IERC20(underlyingToken).balanceOf(address(this));
@@ -675,6 +692,26 @@ contract StrategyOne is ReentrancyGuard {
     }
 
     // ::::::::::::: GETTERS ::::::::::::: //
+
+    /// @notice Returns strategy details
+    /// @return underlyingToken Address of the underlying token
+    /// @return currentYield Current yield rate
+    /// @return duration Strategy duration
+    /// @return rate PT rate
+    function getStrategyDetails() external view returns (
+        address underlyingToken,
+        uint256 currentYield,
+        uint256 duration,
+        uint256 rate
+    ) {
+        address ptToken = IMockPendleRouter(router).PTgUSDC();
+        return (
+            IMockPendleRouter(router).gUSDC(),
+            IMockPendleOracle(oracle).getYield(ptToken),
+            IMockPendleOracle(oracle).getDuration(ptToken),
+            IMockPendleOracle(oracle).getPTRate(ptToken)
+        );
+    }
 
     /// @notice Returns protocol statistics
     /// @return totalActivePositions Total number of active positions
