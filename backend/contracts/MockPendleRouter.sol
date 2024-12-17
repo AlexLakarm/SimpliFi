@@ -27,6 +27,9 @@ error MarketZeroAmountsInput();
 /// @notice Thrown when token allowance is insufficient
 error InsufficientAllowance(address token, uint256 currentAllowance, uint256 requiredAmount);
 
+/// @notice Thrown when amount is insufficient or zero
+error InsufficientAmount();
+
 // ::::::::::::: INTERFACES ::::::::::::: // 
 
 /// @notice Interface for the price oracle contract
@@ -79,6 +82,9 @@ contract MockPendleRouter is Ownable {
 
     /// @notice Mapping of tokens to their PT tokens
     mapping(address => address) public tokenToPt;
+
+    /// @notice Mapping of PT tokens to their underlying tokens
+    mapping(address => address) public ptToToken;
 
     /// @notice Mapping of user strategies by maturity date
     mapping(address => mapping(uint256 => Strategy)) public userStrategies;
@@ -134,8 +140,9 @@ contract MockPendleRouter is Ownable {
         priceOracle = IPriceOracle(_OracleAddress);
         ptgUSDC = IPtgUSDC(_PTgUSDCAdress);
         
-        // Initialize mapping for gUSDC
+        // Initialize mappings for gUSDC
         tokenToPt[_gUSDCAddress] = _PTgUSDCAdress;
+        ptToToken[_PTgUSDCAdress] = _gUSDCAddress;
     }
 
     // ::::::::::::: EXTERNAL FUNCTIONS ::::::::::::: // 
@@ -169,19 +176,23 @@ contract MockPendleRouter is Ownable {
         // Calculate maturity date
         uint256 maturityDate = block.timestamp + strategyDuration;
 
-        // Transfer tokens from user to router
-        IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
-        
-        // Mint PT directly to user
-        ptgUSDC.mint(msg.sender, ptReceived, maturityDate);
-
-        // Store strategy details
+        // Store strategy details before external calls
         userStrategies[msg.sender][maturityDate] = Strategy({
             annualYield: currentYield,
             duration: strategyDuration,
             entryRate: currentRate,
             amount: ptReceived
         });
+
+        // Vérifier l'allowance avant le transferFrom
+        uint256 currentAllowance = IERC20(tokenAddress).allowance(msg.sender, address(this));
+        if (currentAllowance < amount) {
+            revert InsufficientAllowance(tokenAddress, currentAllowance, amount);
+        }
+
+        // External calls after state changes
+        IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
+        ptgUSDC.mint(msg.sender, ptReceived, maturityDate);
 
         emit Swapped(
             msg.sender,
@@ -195,40 +206,39 @@ contract MockPendleRouter is Ownable {
     }
 
     /// @notice Redeems PT tokens for underlying tokens at maturity
-    /// @param tokenAddress Address of the underlying token
-    /// @param maturityDate Maturity date of the position
-    function redeemPyToToken(address tokenAddress, uint256 maturityDate) external {
-        if (block.timestamp < maturityDate) revert YCNotExpired();
-        if (block.timestamp >= maturityDate + 365 days) revert MarketExpired();
-        if (tokenAddress == address(0)) revert ZeroAddress();
-        
-        address ptAddress = tokenToPt[tokenAddress];
-        if (ptAddress == address(0)) revert RouterInsufficientPtOut(0, 0);
+    /// @param ptToken Address of the PT token to redeem
+    /// @param ptAmount Amount of PT tokens to redeem
+    function redeemPyToToken(address ptToken, uint256 ptAmount) external returns (uint256) {
+        if (ptToken == address(0)) revert ZeroAddress();
+        if (ptAmount == 0) revert InsufficientAmount();
 
-        Strategy memory strategy = userStrategies[msg.sender][maturityDate];
-        require(strategy.amount > 0, "No strategy found");
+        // Get the underlying token
+        address underlyingToken = ptToToken[ptToken];
+        if (underlyingToken == address(0)) revert RouterInsufficientPtOut(0, 0);
 
-        // Calculate redemption amounts
-        uint256 principal = strategy.amount;
-        uint256 yieldAmount = (principal * strategy.annualYield * strategy.duration) / (365 days * 100);
-        uint256 totalAmount = principal + yieldAmount;
+        // Vérifier la balance de PT tokens de l'utilisateur
+        uint256 ptBalance = IERC20(ptToken).balanceOf(msg.sender);
+        if (ptBalance < ptAmount) revert InsufficientAmount();
+
+        // Vérifier l'allowance des PT tokens
+        uint256 ptAllowance = IERC20(ptToken).allowance(msg.sender, address(this));
+        if (ptAllowance < ptAmount) {
+            revert InsufficientAllowance(ptToken, ptAllowance, ptAmount);
+        }
+
+        // Transfer PT tokens from sender to router
+        IERC20(ptToken).transferFrom(msg.sender, address(this), ptAmount);
 
         // Burn PT tokens
-        ptgUSDC.burn(msg.sender, strategy.amount);
+        IPtgUSDC(ptToken).burn(address(this), ptAmount);
 
-        // Mint gUSDC to user
-        IgUSDC(tokenAddress).mint(msg.sender, totalAmount);
+        // Mint underlying tokens to this contract
+        IgUSDC(underlyingToken).mint(address(this), ptAmount);
 
-        // Clear strategy data
-        delete userStrategies[msg.sender][maturityDate];
+        // Transfer underlying tokens to sender
+        IERC20(underlyingToken).transfer(msg.sender, ptAmount);
 
-        emit PtRedeemed(
-            msg.sender,
-            principal,
-            yieldAmount,
-            totalAmount,
-            maturityDate
-        );
+        return ptAmount;
     }
 
     // ::::::::::::: ADMIN FUNCTIONS ::::::::::::: // 
@@ -240,5 +250,33 @@ contract MockPendleRouter is Ownable {
         if (tokenAddress == address(0)) revert ZeroAddress();
         if (ptAddress == address(0)) revert ZeroAddress();
         tokenToPt[tokenAddress] = ptAddress;
+    }
+
+    /// @notice Permet au propriétaire de récupérer les PT tokens bloqués
+    /// @param ptAddress Adresse du token PT
+    /// @param amount Montant à récupérer
+    function rescuePT(address ptAddress, uint256 amount) external onlyOwner {
+        if (ptAddress == address(0)) revert ZeroAddress();
+        if (amount == 0) revert MarketZeroAmountsInput();
+        IERC20(ptAddress).transfer(msg.sender, amount);
+    }
+
+    /// @notice Permet au propriétaire de récupérer les tokens sous-jacents bloqués
+    /// @param tokenAddress Adresse du token
+    /// @param amount Montant à récupérer
+    function rescueToken(address tokenAddress, uint256 amount) external onlyOwner {
+        if (tokenAddress == address(0)) revert ZeroAddress();
+        if (amount == 0) revert MarketZeroAmountsInput();
+        IERC20(tokenAddress).transfer(msg.sender, amount);
+    }
+
+    /// @notice Récupère les détails d'une stratégie active
+    /// @param user Adresse de l'utilisateur
+    /// @param maturityDate Date de maturité de la stratégie
+    /// @return Strategy Les détails de la stratégie
+    function getActiveStrategy(address user, uint256 maturityDate) external view returns (Strategy memory) {
+        Strategy memory strategy = userStrategies[user][maturityDate];
+        require(strategy.amount > 0, "No active strategy found");
+        return strategy;
     }
 }
