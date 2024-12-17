@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Drill } from "lucide-react";
 import Link from "next/link";
 
 export default function Learn() {
@@ -20,10 +20,12 @@ export default function Learn() {
             </Button>
           </Link>
         </div>
-
-        <div className="p-6 bg-card rounded-lg border">
-          <h2 className="text-2xl font-bold mb-4">Learn</h2>
+        <div className="container mx-auto p-4">
+        <h2 className="text-2xl font-bold">Learn</h2>
+        <div className="flex items-center gap-2 mt-4">
+          <Drill className="h-6 w-6 text-muted-foreground" />
           <p className="text-muted-foreground">Coming soon...</p>
+          </div>
         </div>
       </div>
     </div>
