@@ -415,8 +415,8 @@ describe("StrategyOne Contract Tests", function () {
                 // Vérifier les fees avant exit
                 const initialProtocolFees = await strategyOne.getProtocolFees();
                 const initialCgpFees = await strategyOne.getCGPFees(cgp1.address);
-                expect(initialProtocolFees[0]).to.be.gt(0); // nonMaturedFees
-                expect(initialCgpFees[0]).to.be.gt(0); // nonMaturedFees
+                expect(initialProtocolFees.nonMaturedFees).to.be.gt(0);
+                expect(initialCgpFees.nonMaturedFees).to.be.gt(0);
 
                 // Avancer le temps exactement à la date de maturité
                 await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
@@ -428,8 +428,8 @@ describe("StrategyOne Contract Tests", function () {
                 const finalProtocolFees = await strategyOne.getProtocolFees();
                 const finalCgpFees = await strategyOne.getCGPFees(cgp1.address);
 
-                expect(finalProtocolFees[1]).to.be.gt(0); // maturedNonWithdrawnFees
-                expect(finalCgpFees[1]).to.be.gt(0); // maturedNonWithdrawnFees
+                expect(finalProtocolFees.maturedNonWithdrawnFees).to.be.gt(0);
+                expect(finalCgpFees.maturedNonWithdrawnFees).to.be.gt(0);
             });
 
             it("Should emit FeesCollected event", async function () {
@@ -678,6 +678,97 @@ describe("StrategyOne Contract Tests", function () {
             const cgpFeePoints = await strategyOne.cgpFeePoints();
             expect(protocolFeePoints).to.equal(50);
             expect(cgpFeePoints).to.equal(75);
+        });
+    });
+
+    // ::::::::::::: ADDITIONAL EVENT TESTS ::::::::::::: //
+    describe("Event Emissions", function () {
+        it("Should emit correct events on position creation", async function () {
+            const { strategyOne, client1, amount } = await loadFixture(enterStrategyFixture);
+            
+            const tx = await strategyOne.connect(client1).enterStrategy(amount);
+            const receipt = await tx.wait();
+            
+            // Vérifier tous les événements émis
+            const events = receipt.logs
+                .map(log => {
+                    try {
+                        return strategyOne.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter(event => event !== null);
+            
+            const eventNames = events.map(e => e.name);
+            expect(eventNames).to.include('StrategyEntered');
+            expect(eventNames).to.include('PendingFeesUpdated');
+        });
+
+        it("Should emit correct events on position exit", async function () {
+            const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
+            
+            // Avancer le temps pour la maturité
+            const positions = await strategyOne.getUserPositions(client1.address);
+            const maturityDate = positions[Number(positionId)].maturityDate;
+            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
+            await ethers.provider.send("evm_mine");
+            
+            const tx = await strategyOne.connect(client1).exitStrategy(positionId);
+            const receipt = await tx.wait();
+            
+            // Vérifier tous les événements émis
+            const events = receipt.logs
+                .map(log => {
+                    try {
+                        return strategyOne.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter(event => event !== null);
+            
+            const eventNames = events.map(e => e.name);
+            expect(eventNames).to.include('StrategyExited');
+            expect(eventNames).to.include('FeesCollected');
+        });
+    });
+
+    // ::::::::::::: ADDITIONAL ERROR CASES ::::::::::::: //
+    describe("Additional Error Cases", function () {
+        it("Should revert when trying to exit non-existent position", async function () {
+            const { strategyOne, client1 } = await loadFixture(enterStrategyFixture);
+            
+            const nonExistentPositionId = 999;
+            await expect(
+                strategyOne.connect(client1).exitStrategy(nonExistentPositionId)
+            ).to.be.revertedWith("Not position owner");
+        });
+
+        it("Should revert when trying to withdraw zero fees", async function () {
+            const { strategyOne, admin1, cgp1 } = await loadFixture(enterStrategyFixture);
+            
+            // Tentative de retrait sans frais accumulés
+            await expect(
+                strategyOne.connect(admin1).withdrawProtocolFees()
+            ).to.be.revertedWith("No fees to withdraw");
+            
+            await expect(
+                strategyOne.connect(cgp1).withdrawCGPFees()
+            ).to.be.revertedWith("No fees to withdraw");
+        });
+
+        it("Should handle edge cases in fee calculations", async function () {
+            const { strategyOne, admin1 } = await loadFixture(enterStrategyFixture);
+            
+            // Tenter de mettre des fee points à 0
+            await expect(
+                strategyOne.connect(admin1).updateFeePoints(0, 0)
+            ).to.not.be.reverted;
+            
+            // Vérifier que les fee points sont bien à 0
+            expect(await strategyOne.protocolFeePoints()).to.equal(0);
+            expect(await strategyOne.cgpFeePoints()).to.equal(0);
         });
     });
 });
