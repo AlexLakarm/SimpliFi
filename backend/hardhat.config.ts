@@ -14,9 +14,9 @@ module.exports = {
       chainId: 31337,
     },
     holesky : {
-      url: HOLESKY_RPC_URL ,
+      url: HOLESKY_RPC_URL,
       chainId: 17000,
-      accounts: [`0x${PRIVATE_KEY}`]
+      accounts: [PRIVATE_KEY]
     }
   },
   solidity: "0.8.28",

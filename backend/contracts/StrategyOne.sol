@@ -651,7 +651,7 @@ contract StrategyOne is ReentrancyGuard {
         Position storage position = allPositions[allPositionsId];
         require(position.isActive, "Position not active");
 
-        // Get NFT details and verify ownership
+        // Get NFT details and verify NFT ownership
         uint256 NFTid = allPositionsId + 1;
         address nftOwner = IStrategyNFT(nftContract).ownerOf(NFTid);
         require(nftOwner != msg.sender, "Cannot buy your own NFT");
