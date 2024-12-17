@@ -116,28 +116,6 @@ describe("MockPendleRouter Contract Tests", function () {
 
     // ::::::::::::: REDEEM TESTS ::::::::::::: //
     describe("Redeem PT to Token", function () {
-        it("Should revert if trying to redeem before maturity", async function () {
-            const { mockPendleRouter, gUSDC, ptgUSDC, user1 } = await loadFixture(deployMockPendleRouterFixture);
-            const amount = ethers.parseUnits("100", 6);
-
-            // Setup
-            await gUSDC.transfer(user1.address, amount);
-            await gUSDC.connect(user1).approve(mockPendleRouter.target, amount);
-            const swapTx = await mockPendleRouter.connect(user1).swapExactTokenForPt(gUSDC.target, amount);
-            const swapReceipt = await swapTx.wait();
-
-            // Récupérer la date de maturité depuis l'événement Swapped
-            const swapEvent = swapReceipt.logs.find(
-                log => log.fragment && log.fragment.name === 'Swapped'
-            );
-            const maturityDate = swapEvent.args.maturityDate;
-
-            // Essayer de redeem immédiatement (avant la maturité)
-            await expect(
-                mockPendleRouter.connect(user1).redeemPyToToken(gUSDC.target, maturityDate)
-            ).to.be.revertedWithCustomError(mockPendleRouter, "YCNotExpired");
-        });
-
         it("Should allow redeeming PT for gUSDC at maturity", async function () {
             const { mockPendleRouter, gUSDC, ptgUSDC, user1 } = await loadFixture(deployMockPendleRouterFixture);
             const amount = ethers.parseUnits("100", 6);
@@ -158,45 +136,43 @@ describe("MockPendleRouter Contract Tests", function () {
             await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate) + 1]);
             await ethers.provider.send("evm_mine");
 
-            // Approuver le router pour les PT
+            // Récupérer le solde PT de l'utilisateur
             const ptBalance = await ptgUSDC.balanceOf(user1.address);
+            
+            // Approuver le router pour les PT tokens
             await ptgUSDC.connect(user1).approve(mockPendleRouter.target, ptBalance);
 
-            // Effectuer le redeem avec la bonne date de maturité
-            const tx = await mockPendleRouter.connect(user1).redeemPyToToken(gUSDC.target, maturityDate);
-            const receipt = await tx.wait();
+            // Effectuer le redeem
+            const redeemTx = await mockPendleRouter.connect(user1).redeemPyToToken(ptgUSDC.target, ptBalance);
+            await redeemTx.wait();
 
-            // Vérifier l'événement PtRedeemed
-            const redeemEvent = receipt.logs.find(
-                log => log.fragment && log.fragment.name === 'PtRedeemed'
-            );
-            expect(redeemEvent.args.user).to.equal(user1.address);
+            // Vérifier les balances finales
+            expect(await ptgUSDC.balanceOf(user1.address)).to.equal(0);
+            expect(await gUSDC.balanceOf(user1.address)).to.equal(ptBalance);
         });
 
-        it("Should revert if trying to redeem after market expiration", async function () {
+        it("Should revert if PT token balance is insufficient", async function () {
+            const { mockPendleRouter, ptgUSDC, user1 } = await loadFixture(deployMockPendleRouterFixture);
+            const amount = ethers.parseUnits("100", 6);
+
+            await expect(
+                mockPendleRouter.connect(user1).redeemPyToToken(ptgUSDC.target, amount)
+            ).to.be.revertedWithCustomError(mockPendleRouter, "InsufficientAmount");
+        });
+
+        it("Should revert if PT token allowance is insufficient", async function () {
             const { mockPendleRouter, gUSDC, ptgUSDC, user1 } = await loadFixture(deployMockPendleRouterFixture);
             const amount = ethers.parseUnits("100", 6);
 
-            // Setup
+            // Setup: Faire un swap d'abord
             await gUSDC.transfer(user1.address, amount);
             await gUSDC.connect(user1).approve(mockPendleRouter.target, amount);
-            const swapTx = await mockPendleRouter.connect(user1).swapExactTokenForPt(gUSDC.target, amount);
-            const swapReceipt = await swapTx.wait();
+            await mockPendleRouter.connect(user1).swapExactTokenForPt(gUSDC.target, amount);
 
-            // Récupérer la date de maturité
-            const swapEvent = swapReceipt.logs.find(
-                log => log.fragment && log.fragment.name === 'Swapped'
-            );
-            const maturityDate = swapEvent.args.maturityDate;
-
-            // Avancer le temps après l'expiration (maturity + 366 jours)
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate) + 366 * 24 * 60 * 60]);
-            await ethers.provider.send("evm_mine");
-
-            // Essayer de redeem après expiration
+            // Essayer de redeem sans approbation
             await expect(
-                mockPendleRouter.connect(user1).redeemPyToToken(gUSDC.target, maturityDate)
-            ).to.be.revertedWithCustomError(mockPendleRouter, "MarketExpired");
+                mockPendleRouter.connect(user1).redeemPyToToken(ptgUSDC.target, amount)
+            ).to.be.revertedWithCustomError(mockPendleRouter, "InsufficientAllowance");
         });
     });
 
@@ -243,10 +219,20 @@ describe("MockPendleRouter Contract Tests", function () {
             await gUSDC.connect(deployer).approve(mockPendleRouter.target, amount);
             await mockPendleRouter.connect(deployer).swapExactTokenForPt(gUSDC.target, amount);
             
+            // Transférer manuellement des PT tokens au router pour le test
+            const ptBalance = await ptgUSDC.balanceOf(deployer.address);
+            await ptgUSDC.connect(deployer).transfer(mockPendleRouter.target, ptBalance);
+            
+            // Vérifier que le router a bien reçu les PT tokens
+            const routerPtBalance = await ptgUSDC.balanceOf(mockPendleRouter.target);
+            expect(routerPtBalance).to.be.gt(0);
+            
             // Rescue les tokens
-            const ptBalance = await ptgUSDC.balanceOf(mockPendleRouter.target);
-            await mockPendleRouter.connect(deployer).rescuePT(ptgUSDC.target, ptBalance);
-            expect(await ptgUSDC.balanceOf(deployer.address)).to.be.gt(0);
+            await mockPendleRouter.connect(deployer).rescuePT(ptgUSDC.target, routerPtBalance);
+            
+            // Vérifier que les tokens ont bien été récupérés
+            expect(await ptgUSDC.balanceOf(deployer.address)).to.equal(ptBalance);
+            expect(await ptgUSDC.balanceOf(mockPendleRouter.target)).to.equal(0);
         });
 
         it("Should allow owner to rescue underlying tokens", async function () {

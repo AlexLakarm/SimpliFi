@@ -13,8 +13,12 @@ describe("PtGUsdc Contract Tests", function () {
         // Transférer l'ownership au router
         await ptgUSDC.transferOwnership(router.address);
 
-        // Calculer une date de maturité (par exemple, dans 180 jours)
-        const maturityTimestamp = Math.floor(Date.now() / 1000) + (180 * 24 * 60 * 60);
+        // Obtenir le timestamp actuel de la blockchain
+        const currentBlock = await ethers.provider.getBlock('latest');
+        const currentTimestamp = currentBlock.timestamp;
+
+        // Calculer la date de maturité (180 jours à partir de maintenant)
+        const maturityTimestamp = currentTimestamp + (180 * 24 * 60 * 60);
 
         return { deployer, router, user1, user2, ptgUSDC, maturityTimestamp };
     }
@@ -42,6 +46,11 @@ describe("PtGUsdc Contract Tests", function () {
             const { ptgUSDC, router, user1, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const mintAmount = ethers.parseUnits("100", 6);
             
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
+            
             await ptgUSDC.connect(router).mint(user1.address, mintAmount, maturityTimestamp);
             expect(await ptgUSDC.balanceOf(user1.address)).to.equal(mintAmount);
         });
@@ -49,6 +58,11 @@ describe("PtGUsdc Contract Tests", function () {
         it("Should emit Transfer event on mint", async function () {
             const { ptgUSDC, router, user1, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const mintAmount = ethers.parseUnits("100", 6);
+            
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
             
             await expect(ptgUSDC.connect(router).mint(user1.address, mintAmount, maturityTimestamp))
                 .to.emit(ptgUSDC, "Transfer")
@@ -70,6 +84,11 @@ describe("PtGUsdc Contract Tests", function () {
             const { ptgUSDC, router, user1, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const amount = ethers.parseUnits("100", 6);
             
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
+            
             await ptgUSDC.connect(router).mint(user1.address, amount, maturityTimestamp);
             await ptgUSDC.connect(router).burn(user1.address, amount);
             expect(await ptgUSDC.balanceOf(user1.address)).to.equal(0);
@@ -78,6 +97,11 @@ describe("PtGUsdc Contract Tests", function () {
         it("Should revert if non-router tries to burn", async function () {
             const { ptgUSDC, router, user1, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const amount = ethers.parseUnits("100", 6);
+            
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
             
             await ptgUSDC.connect(router).mint(user1.address, amount, maturityTimestamp);
             await expect(ptgUSDC.connect(user1).burn(user1.address, amount))
@@ -90,6 +114,11 @@ describe("PtGUsdc Contract Tests", function () {
         it("Should transfer tokens between accounts", async function () {
             const { ptgUSDC, router, user1, user2, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const amount = ethers.parseUnits("100", 6);
+            
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
             
             await ptgUSDC.connect(router).mint(user1.address, amount, maturityTimestamp);
             await ptgUSDC.connect(user1).transfer(user2.address, amount);
@@ -109,6 +138,11 @@ describe("PtGUsdc Contract Tests", function () {
         it("Should allow router (owner) to mint", async function () {
             const { ptgUSDC, router, user1, maturityTimestamp } = await loadFixture(deployPtGUsdcFixture);
             const mintAmount = ethers.parseUnits("100", 6);
+            
+            // Avancer le temps pour s'assurer que la date de maturité est dans le futur
+            const currentBlock = await ethers.provider.getBlock('latest');
+            await ethers.provider.send("evm_setNextBlockTimestamp", [currentBlock.timestamp + 1]);
+            await ethers.provider.send("evm_mine");
             
             await ptgUSDC.connect(router).mint(user1.address, mintAmount, maturityTimestamp);
             expect(await ptgUSDC.balanceOf(user1.address)).to.equal(mintAmount);

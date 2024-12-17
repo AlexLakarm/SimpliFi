@@ -47,7 +47,7 @@ describe("StrategyOne Contract Tests", function () {
 
         // Configurer l'oracle
         const annualYieldPoints = 10; // 10%
-        const duration = 180; // 180 jours
+        const duration = 180 * 24 * 60 * 60; // 180 jours en secondes
         
         await mockPendleOracle.setRateAndPrice(ptgUSDC.target, annualYieldPoints);
         await mockPendleOracle.setDuration(ptgUSDC.target, duration);
@@ -131,6 +131,7 @@ describe("StrategyOne Contract Tests", function () {
 
         // Configurer un yield plus élevé dans l'oracle pour générer des fees
         await mockPendleOracle.setRateAndPrice(ptgUSDC.target, 50); // 50% au lieu de 1000%
+        await mockPendleOracle.setDuration(ptgUSDC.target, duration);
 
         // Transférer des gUSDC au client1
         await gUSDC.transfer(client1.address, amount);
@@ -167,7 +168,16 @@ describe("StrategyOne Contract Tests", function () {
                 }
             }
         );
-        const positionId = event.args.positionId;
+
+        // Log pour déboguer
+        console.log("Event trouvé:", event);
+        const parsedEvent = fixture.strategyOne.interface.parseLog(event);
+        console.log("Event parsé:", parsedEvent);
+        console.log("NFTid:", parsedEvent.args.NFTid);
+        console.log("Type of NFTid:", typeof parsedEvent.args.NFTid);
+
+        // NFTid est déjà un BigInt, on soustrait juste 1n
+        const positionId = parsedEvent.args.NFTid - 1n;
 
         return { ...fixture, positionId };
     }
@@ -241,7 +251,16 @@ describe("StrategyOne Contract Tests", function () {
     describe("Strategy Entry", function () {
         describe("Position Creation", function () {
             it("Should allow client to enter strategy", async function () {
-                const { strategyOne, client1, amount } = await loadFixture(enterStrategyFixture);
+                const { strategyOne, client1, amount, mockPendleOracle, ptgUSDC } = await loadFixture(enterStrategyFixture);
+                
+                // Log les valeurs avant le test
+                console.log("Test values:");
+                console.log("Amount:", ethers.formatUnits(amount, 6));
+                const yield_ = await mockPendleOracle.getYield(ptgUSDC.target);
+                console.log("Yield:", yield_.toString());
+                const duration = await mockPendleOracle.getDuration(ptgUSDC.target);
+                console.log("Duration:", duration.toString());
+                
                 await expect(strategyOne.connect(client1).enterStrategy(amount))
                     .to.emit(strategyOne, "StrategyEntered");
             });
@@ -340,34 +359,45 @@ describe("StrategyOne Contract Tests", function () {
     describe("Strategy Exit", function () {
         describe("Position Exit", function () {
             it("Should allow client to exit strategy at maturity", async function () {
-                const { strategyOne, client1, positionId, duration } = await loadFixture(exitStrategyFixture);
+                const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
 
-                // Avancer le temps jusqu'à la maturité
-                await ethers.provider.send("evm_increaseTime", [duration * 24 * 60 * 60]);
+                // Récupérer la position
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const position = positions[Number(positionId)];
+                const maturityDate = position.maturityDate;
+
+                // Log pour déboguer
+                const currentTimestamp = BigInt(await ethers.provider.getBlock("latest").then(b => b.timestamp));
+                console.log("Current timestamp:", currentTimestamp.toString());
+                console.log("Maturity date:", maturityDate.toString());
+
+                // Avancer le temps exactement à la date de maturité
+                const timeToAdvance = maturityDate - currentTimestamp;
+                console.log("Time to advance:", timeToAdvance.toString());
+
+                // Avancer le temps
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
                 await ethers.provider.send("evm_mine");
+
+                // Log après l'avancement du temps
+                console.log("New timestamp:", (await ethers.provider.getBlock("latest")).timestamp.toString());
 
                 await expect(strategyOne.connect(client1).exitStrategy(positionId))
                     .to.emit(strategyOne, "StrategyExited");
             });
 
-            it("Should revert if trying to exit before maturity", async function () {
-                const { strategyOne, client1, positionId, mockPendleRouter } = await loadFixture(exitStrategyFixture);
-                await expect(strategyOne.connect(client1).exitStrategy(positionId))
-                    .to.be.revertedWith("Strategy not yet mature");
-            });
-
             it("Should revert if non-owner tries to exit", async function () {
-                const { strategyOne, client1, client2, positionId, duration } = await loadFixture(exitStrategyFixture);
+                const { strategyOne, client1, client2, positionId } = await loadFixture(exitStrategyFixture);
                 
-                // Vérifier que la position existe pour client1
+                // Récupérer la position
                 const positions = await strategyOne.getUserPositions(client1.address);
-                expect(positions.length).to.be.gt(0);
-                expect(positions[positionId].isActive).to.be.true;
+                const position = positions[Number(positionId)];
+                const maturityDate = position.maturityDate;
 
-                await ethers.provider.send("evm_increaseTime", [duration * 24 * 60 * 60]);
+                // Avancer le temps exactement à la date de maturité
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
                 await ethers.provider.send("evm_mine");
 
-                // client2 essaie d'accéder à la position de client1
                 await expect(strategyOne.connect(client2).exitStrategy(positionId))
                     .to.be.revertedWith("Not position owner");
             });
@@ -375,7 +405,12 @@ describe("StrategyOne Contract Tests", function () {
 
         describe("Fee Distribution", function () {
             it("Should update fee statuses correctly", async function () {
-                const { strategyOne, client1, cgp1, positionId, duration } = await loadFixture(exitStrategyFixture);
+                const { strategyOne, client1, cgp1, positionId } = await loadFixture(exitStrategyFixture);
+
+                // Récupérer la position
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const position = positions[Number(positionId)];
+                const maturityDate = position.maturityDate;
 
                 // Vérifier les fees avant exit
                 const initialProtocolFees = await strategyOne.getProtocolFees();
@@ -383,7 +418,8 @@ describe("StrategyOne Contract Tests", function () {
                 expect(initialProtocolFees[0]).to.be.gt(0); // nonMaturedFees
                 expect(initialCgpFees[0]).to.be.gt(0); // nonMaturedFees
 
-                await ethers.provider.send("evm_increaseTime", [duration * 24 * 60 * 60]);
+                // Avancer le temps exactement à la date de maturité
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
                 await ethers.provider.send("evm_mine");
 
                 await strategyOne.connect(client1).exitStrategy(positionId);
@@ -397,9 +433,15 @@ describe("StrategyOne Contract Tests", function () {
             });
 
             it("Should emit FeesCollected event", async function () {
-                const { strategyOne, client1, cgp1, positionId, duration } = await loadFixture(exitStrategyFixture);
+                const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
 
-                await ethers.provider.send("evm_increaseTime", [duration * 24 * 60 * 60]);
+                // Récupérer la position
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const position = positions[Number(positionId)];
+                const maturityDate = position.maturityDate;
+
+                // Avancer le temps exactement à la date de maturité
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
                 await ethers.provider.send("evm_mine");
 
                 await expect(strategyOne.connect(client1).exitStrategy(positionId))
@@ -409,17 +451,233 @@ describe("StrategyOne Contract Tests", function () {
 
         describe("NFT Burning", function () {
             it("Should burn NFT on exit", async function () {
-                const { strategyOne, strategyNFT, client1, positionId, duration } = await loadFixture(exitStrategyFixture);
+                const { strategyOne, strategyNFT, client1, positionId } = await loadFixture(exitStrategyFixture);
 
-                await ethers.provider.send("evm_increaseTime", [duration * 24 * 60 * 60]);
+                // Récupérer la position
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const position = positions[Number(positionId)];
+                const maturityDate = position.maturityDate;
+
+                // Avancer le temps exactement à la date de maturité
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
                 await ethers.provider.send("evm_mine");
 
                 await strategyOne.connect(client1).exitStrategy(positionId);
 
-                // Vérifier que le NFT n'existe plus
-                await expect(strategyNFT.ownerOf(BigInt(positionId) + 1n))
+                // Vérifier que le NFT n'existe plus (positionId + 1n = NFTid)
+                await expect(strategyNFT.ownerOf(positionId + 1n))
                     .to.be.revertedWithCustomError(strategyNFT, "ERC721NonexistentToken");
             });
+        });
+    });
+
+    // ::::::::::::: FEE MANAGEMENT TESTS ::::::::::::: //
+    describe("Fee Management", function () {
+        describe("Fee Points Update", function () {
+            it("Should allow admin to update fee points", async function () {
+                const { strategyOne, admin1 } = await loadFixture(configureRoleControlFixture);
+                
+                const tx = await strategyOne.connect(admin1).updateFeePoints(50, 75);
+                const receipt = await tx.wait();
+
+                // Trouver l'événement FeePointsUpdated
+                const event = receipt.logs.find(
+                    log => {
+                        try {
+                            const parsedLog = strategyOne.interface.parseLog(log);
+                            return parsedLog && parsedLog.name === 'FeePointsUpdated';
+                        } catch {
+                            return false;
+                        }
+                    }
+                );
+
+                // Vérifier les valeurs de l'événement
+                const parsedEvent = strategyOne.interface.parseLog(event);
+                expect(parsedEvent.args[0]).to.equal(1); // oldProtocolFeePoints
+                expect(parsedEvent.args[1]).to.equal(50); // newProtocolFeePoints
+                expect(parsedEvent.args[2]).to.equal(1); // oldCGPFeePoints
+                expect(parsedEvent.args[3]).to.equal(75); // newCGPFeePoints
+                
+                // Vérifier que le timestamp est proche de maintenant (à 2 secondes près)
+                const currentTime = await ethers.provider.getBlock('latest').then(b => b.timestamp);
+                expect(parsedEvent.args[4]).to.be.closeTo(currentTime, 2);
+
+                // Vérifier les valeurs mises à jour
+                const protocolFeePoints = await strategyOne.protocolFeePoints();
+                const cgpFeePoints = await strategyOne.cgpFeePoints();
+                expect(protocolFeePoints).to.equal(50);
+                expect(cgpFeePoints).to.equal(75);
+            });
+
+            it("Should revert if non-admin tries to update fee points", async function () {
+                const { strategyOne, client1 } = await loadFixture(configureRoleControlFixture);
+                
+                await expect(strategyOne.connect(client1).updateFeePoints(200, 300))
+                    .to.be.revertedWith("Caller is not an admin");
+            });
+
+            it("Should revert if fee points exceed maximum", async function () {
+                const { strategyOne, admin1 } = await loadFixture(configureRoleControlFixture);
+                
+                await expect(strategyOne.connect(admin1).updateFeePoints(5001, 300))
+                    .to.be.revertedWith("Protocol fee too high");
+                
+                await expect(strategyOne.connect(admin1).updateFeePoints(50, 5001))
+                    .to.be.revertedWith("CGP fee too high");
+            });
+        });
+
+        describe("Fee Withdrawal", function () {
+            it("Should allow admin to withdraw protocol fees", async function () {
+                const { strategyOne, admin1, client1, positionId } = await loadFixture(exitStrategyFixture);
+                
+                // Avancer le temps pour la maturité
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const maturityDate = positions[Number(positionId)].maturityDate;
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
+                await ethers.provider.send("evm_mine");
+
+                // Exit strategy pour générer des frais
+                await strategyOne.connect(client1).exitStrategy(positionId);
+
+                // Vérifier les frais avant le retrait
+                const beforeFees = await strategyOne.getProtocolFees();
+                expect(beforeFees.maturedNonWithdrawnFees).to.be.gt(0);
+
+                // Retirer les frais
+                await expect(strategyOne.connect(admin1).withdrawProtocolFees())
+                    .to.emit(strategyOne, "ProtocolFeesWithdrawn");
+
+                // Vérifier les frais après le retrait
+                const afterFees = await strategyOne.getProtocolFees();
+                expect(afterFees.maturedNonWithdrawnFees).to.equal(0);
+                expect(afterFees.withdrawnFees).to.be.gt(0);
+            });
+
+            it("Should allow CGP to withdraw their fees", async function () {
+                const { strategyOne, cgp1, client1, positionId } = await loadFixture(exitStrategyFixture);
+                
+                // Avancer le temps pour la maturité
+                const positions = await strategyOne.getUserPositions(client1.address);
+                const maturityDate = positions[Number(positionId)].maturityDate;
+                await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
+                await ethers.provider.send("evm_mine");
+
+                // Exit strategy pour générer des frais
+                await strategyOne.connect(client1).exitStrategy(positionId);
+
+                // Vérifier les frais avant le retrait
+                const beforeFees = await strategyOne.getCGPFees(cgp1.address);
+                expect(beforeFees.maturedNonWithdrawnFees).to.be.gt(0);
+
+                // Retirer les frais
+                await expect(strategyOne.connect(cgp1).withdrawCGPFees())
+                    .to.emit(strategyOne, "CGPFeesWithdrawn");
+
+                // Vérifier les frais après le retrait
+                const afterFees = await strategyOne.getCGPFees(cgp1.address);
+                expect(afterFees.maturedNonWithdrawnFees).to.equal(0);
+                expect(afterFees.withdrawnFees).to.be.gt(0);
+            });
+
+            it("Should revert if non-admin tries to withdraw protocol fees", async function () {
+                const { strategyOne, client1 } = await loadFixture(exitStrategyFixture);
+                await expect(strategyOne.connect(client1).withdrawProtocolFees())
+                    .to.be.revertedWith("Caller is not an admin");
+            });
+
+            it("Should revert if non-CGP tries to withdraw CGP fees", async function () {
+                const { strategyOne, client1 } = await loadFixture(exitStrategyFixture);
+                await expect(strategyOne.connect(client1).withdrawCGPFees())
+                    .to.be.revertedWith("Caller is not a CGP");
+            });
+        });
+    });
+
+    // ::::::::::::: POSITION MANAGEMENT TESTS ::::::::::::: //
+    describe("Position Management", function () {
+        it("Should correctly track user positions", async function () {
+            const { strategyOne, client1, amount } = await loadFixture(enterStrategyFixture);
+            
+            // Entrer dans la stratégie
+            await strategyOne.connect(client1).enterStrategy(amount);
+            
+            // Vérifier les positions
+            const positions = await strategyOne.getUserPositions(client1.address);
+            expect(positions.length).to.be.gt(0);
+            expect(positions[0].gUSDCAmount).to.equal(amount);
+        });
+
+        it("Should correctly update position status on exit", async function () {
+            const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
+            
+            // Récupérer la position
+            const positions = await strategyOne.getUserPositions(client1.address);
+            const position = positions[Number(positionId)];
+            const maturityDate = position.maturityDate;
+
+            // Avancer le temps exactement à la date de maturité
+            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
+            await ethers.provider.send("evm_mine");
+
+            // Exit strategy
+            await strategyOne.connect(client1).exitStrategy(positionId);
+            
+            // Vérifier le statut de la position dans userPositions
+            const updatedPositions = await strategyOne.getUserPositions(client1.address);
+            const updatedPosition = updatedPositions.find(p => p.allPositionsId.toString() === positionId.toString());
+            expect(updatedPosition.isActive).to.be.false;
+        });
+
+        it("Should revert when trying to exit before maturity", async function () {
+            const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
+            
+            await expect(strategyOne.connect(client1).exitStrategy(positionId))
+                .to.be.revertedWith("Strategy not yet mature");
+        });
+
+        it("Should revert when trying to exit an already exited position", async function () {
+            const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
+            
+            // Avancer le temps pour la maturité
+            const positions = await strategyOne.getUserPositions(client1.address);
+            const maturityDate = positions[Number(positionId)].maturityDate;
+            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
+            await ethers.provider.send("evm_mine");
+
+            // Exit une première fois
+            await strategyOne.connect(client1).exitStrategy(positionId);
+            
+            // Tenter d'exit une seconde fois
+            await expect(strategyOne.connect(client1).exitStrategy(positionId))
+                .to.be.revertedWith("Position not active");
+        });
+    });
+
+    // ::::::::::::: VIEW FUNCTIONS TESTS ::::::::::::: //
+    describe("View Functions", function () {
+        it("Should return correct strategy details", async function () {
+            const { strategyOne, gUSDC, mockPendleOracle, ptgUSDC } = await loadFixture(configureRoleControlFixture);
+            
+            const details = await strategyOne.getStrategyDetails();
+            expect(details.underlyingToken).to.equal(gUSDC.target);
+            expect(details.currentYield).to.equal(await mockPendleOracle.getYield(ptgUSDC.target));
+            expect(details.duration).to.equal(await mockPendleOracle.getDuration(ptgUSDC.target));
+            expect(details.rate).to.equal(await mockPendleOracle.getPTRate(ptgUSDC.target));
+        });
+
+        it("Should return correct fee points", async function () {
+            const { strategyOne, admin1 } = await loadFixture(configureRoleControlFixture);
+            
+            // Mettre à jour les fee points avec des valeurs valides (≤ 100)
+            await strategyOne.connect(admin1).updateFeePoints(50, 75);
+            
+            // Vérifier les fee points
+            const protocolFeePoints = await strategyOne.protocolFeePoints();
+            const cgpFeePoints = await strategyOne.cgpFeePoints();
+            expect(protocolFeePoints).to.equal(50);
+            expect(cgpFeePoints).to.equal(75);
         });
     });
 });
