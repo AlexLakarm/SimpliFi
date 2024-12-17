@@ -165,4 +165,150 @@ describe("StrategyNFT Contract Tests", function () {
             ).to.be.revertedWith("Token does not exist");  // Utiliser le message d'erreur exact du contrat
         });
     });
+
+    // ::::::::::::: TRANSFER TESTS ::::::::::::: //
+    describe("Transfer", function () {
+        it("Should allow owner to transfer NFT", async function () {
+            const { strategyNFT, strategyContract, user1, user2 } = await loadFixture(deployStrategyNftFixture);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            await strategyNFT.connect(strategyContract).mintStrategyNFT(
+                user1.address,
+                ethers.parseUnits("100", 6),
+                15552000,
+                0
+            );
+
+            await expect(
+                strategyNFT.connect(user1).transferFrom(user1.address, user2.address, 1)
+            ).to.emit(strategyNFT, "Transfer")
+              .withArgs(user1.address, user2.address, 1);
+
+            expect(await strategyNFT.ownerOf(1)).to.equal(user2.address);
+        });
+
+        it("Should revert transfer if caller is not owner", async function () {
+            const { strategyNFT, strategyContract, user1, user2 } = await loadFixture(deployStrategyNftFixture);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            await strategyNFT.connect(strategyContract).mintStrategyNFT(
+                user1.address,
+                ethers.parseUnits("100", 6),
+                15552000,
+                0
+            );
+
+            await expect(
+                strategyNFT.connect(user2).transferFrom(user1.address, user2.address, 1)
+            ).to.be.revertedWithCustomError(strategyNFT, "ERC721InsufficientApproval");
+        });
+    });
+
+    // ::::::::::::: NFT DETAILS TESTS ::::::::::::: //
+    describe("NFT Details", function () {
+        it("Should return correct NFT details", async function () {
+            const { strategyNFT, strategyContract, user1 } = await loadFixture(deployStrategyNftFixture);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            const amount = ethers.parseUnits("100", 6);
+            const lockTime = 15552000;
+            const strategyType = 0;
+
+            await strategyNFT.connect(strategyContract).mintStrategyNFT(
+                user1.address,
+                amount,
+                lockTime,
+                strategyType
+            );
+
+            const tokenId = 1;
+            const attrs = await strategyNFT.getStrategyAttributes(tokenId);
+            expect(attrs.initialAmount).to.equal(amount);
+            expect(attrs.duration).to.equal(lockTime);
+            expect(attrs.strategyId).to.equal(strategyType);
+        });
+
+        it("Should revert when querying details for non-existent token", async function () {
+            const { strategyNFT } = await loadFixture(deployStrategyNftFixture);
+            const nonExistentTokenId = 999;
+
+            await expect(
+                strategyNFT.getStrategyAttributes(nonExistentTokenId)
+            ).to.be.revertedWith("Token does not exist");
+        });
+    });
+
+    // ::::::::::::: BASE URI TESTS ::::::::::::: //
+    describe("Base URI Management", function () {
+        it("Should allow owner to update baseURI", async function () {
+            const { strategyNFT, deployer, strategyContract, user1 } = await loadFixture(deployStrategyNftFixture);
+            const newBaseURI = "QmNewHash123456789";
+            
+            await strategyNFT.connect(deployer).setBaseURI(newBaseURI);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            // Mint un NFT pour vérifier le nouveau baseURI
+            await strategyNFT.connect(strategyContract).mintStrategyNFT(
+                user1.address,
+                ethers.parseUnits("100", 6),
+                15552000,
+                0
+            );
+            
+            const tokenURI = await strategyNFT.tokenURI(1);
+            expect(tokenURI).to.include("data:application/json;base64,");
+            
+            // Décoder le Base64 pour vérifier le contenu
+            const base64Data = tokenURI.split('base64,')[1];
+            const decodedData = Buffer.from(base64Data, 'base64').toString();
+            const metadata = JSON.parse(decodedData);
+            
+            // Vérifier que l'URL de l'image est correcte
+            expect(metadata.image).to.equal(`https://ipfs.io/ipfs/${newBaseURI}`);
+        });
+
+        it("Should revert if non-owner tries to update baseURI", async function () {
+            const { strategyNFT, user1 } = await loadFixture(deployStrategyNftFixture);
+            const newBaseURI = "QmNewHash123456789";
+            
+            await expect(
+                strategyNFT.connect(user1).setBaseURI(newBaseURI)
+            ).to.be.revertedWithCustomError(strategyNFT, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    // ::::::::::::: EDGE CASES TESTS ::::::::::::: //
+    describe("Edge Cases", function () {
+        it("Should revert minting to zero address", async function () {
+            const { strategyNFT, strategyContract } = await loadFixture(deployStrategyNftFixture);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            await expect(
+                strategyNFT.connect(strategyContract).mintStrategyNFT(
+                    ethers.ZeroAddress,
+                    ethers.parseUnits("100", 6),
+                    15552000,
+                    0
+                )
+            ).to.be.revertedWithCustomError(strategyNFT, "ERC721InvalidReceiver");
+        });
+
+        it("Should allow minting with any valid parameters", async function () {
+            const { strategyNFT, strategyContract, user1 } = await loadFixture(deployStrategyNftFixture);
+            await strategyNFT.setStrategyContract(strategyContract.address);
+            
+            // Test avec un montant minimal
+            await strategyNFT.connect(strategyContract).mintStrategyNFT(
+                user1.address,
+                1,
+                1,
+                0
+            );
+
+            const attrs = await strategyNFT.getStrategyAttributes(1);
+            expect(attrs.initialAmount).to.equal(1);
+            expect(attrs.duration).to.equal(1);
+            expect(attrs.strategyId).to.equal(0);
+        });
+    });
 });
