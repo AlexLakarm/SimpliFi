@@ -72,21 +72,24 @@ export default function DappLayout({
               w-full
             ">
               <nav className="
-                grid
-                grid-cols-4
+                flex
+                justify-between
+                items-center
                 gap-0.5
                 w-full
+                text-[10px]
+                md:text-xs
+                lg:text-sm
               ">
                 {menuItems.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "px-0.5 sm:px-2 md:px-4 py-1 md:py-2",
-                      "text-[9px] sm:text-sm md:text-base",
-                      "whitespace-nowrap",
+                      "flex-1",
+                      "px-1.5 py-1.5",
                       "text-center",
-                      "rounded-sm md:rounded-md transition-colors duration-200",
+                      "rounded-sm transition-colors duration-200",
                       "hover:bg-accent hover:text-accent-foreground",
                       pathname === item.href
                         ? "bg-secondary text-secondary-foreground"
