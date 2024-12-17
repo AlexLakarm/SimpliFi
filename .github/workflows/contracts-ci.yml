@@ -13,6 +13,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      HOLESKY_RPC_URL: ${{ secrets.HOLESKY_RPC_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
 
     steps:
     - uses: actions/checkout@v3
@@ -27,6 +31,13 @@ jobs:
     - name: Install dependencies
       working-directory: ./backend
       run: npm ci
+
+    - name: Create env file
+      working-directory: ./backend
+      run: |
+        echo "PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}" >> .env
+        echo "HOLESKY_RPC_URL=${{ secrets.HOLESKY_RPC_URL }}" >> .env
+        echo "ETHERSCAN_API_KEY=${{ secrets.ETHERSCAN_API_KEY }}" >> .env
 
     - name: Compile contracts
       working-directory: ./backend
