@@ -1,0 +1,41 @@
+name: Smart Contracts CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'contracts/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'contracts/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'contracts/package-lock.json'
+
+    - name: Install dependencies
+      working-directory: ./contracts
+      run: npm ci
+
+    - name: Compile contracts
+      working-directory: ./contracts
+      run: npx hardhat compile
+
+    - name: Run tests
+      working-directory: ./contracts
+      run: npx hardhat test
+
+    - name: Run coverage
+      working-directory: ./contracts
+      run: npx hardhat coverage 
