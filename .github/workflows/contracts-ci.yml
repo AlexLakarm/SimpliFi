@@ -13,6 +13,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      HOLESKY_RPC_URL: ${{ secrets.HOLESKY_RPC_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
 
     steps:
     - uses: actions/checkout@v3
@@ -24,18 +28,32 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'backend/package-lock.json'
 
+    - name: Debug Environment Variables
+      run: |
+        echo "Private Key length: ${#PRIVATE_KEY}"
+        echo "HOLESKY_RPC_URL set: $([[ ! -z "$HOLESKY_RPC_URL" ]] && echo 'yes' || echo 'no')"
+        echo "ETHERSCAN_API_KEY set: $([[ ! -z "$ETHERSCAN_API_KEY" ]] && echo 'yes' || echo 'no')"
+
     - name: Install dependencies
       working-directory: ./backend
       run: npm ci
 
+    - name: Create env file
+      working-directory: ./backend
+      run: |
+        echo "PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}" >> .env
+        echo "HOLESKY_RPC_URL=${{ secrets.HOLESKY_RPC_URL }}" >> .env
+        echo "ETHERSCAN_API_KEY=${{ secrets.ETHERSCAN_API_KEY }}" >> .env
+        echo "Env file created with length: $(wc -l < .env)"
+
     - name: Compile contracts
       working-directory: ./backend
-      run: npx hardhat compile --network hardhat
+      run: npx hardhat compile
 
     - name: Run tests
       working-directory: ./backend
-      run: npx hardhat test --network hardhat
+      run: npx hardhat test
 
     - name: Run coverage
       working-directory: ./backend
-      run: npx hardhat coverage --network hardhat
+      run: npx hardhat coverage

@@ -2,31 +2,35 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@nomicfoundation/hardhat-verify");
 require("dotenv").config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
-const HOLESKY_RPC_URL=process.env.HOLESKY_RPC_URL || "";
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
-
-/** @type import('hardhat/config').HardhatUserConfig */
-module.exports = {
+// Configuration de base
+const config = {
   defaultNetwork: "hardhat",
-  networks:{
+  networks: {
     hardhat: {
       // Configuration pour le réseau de test intégré
     },
-    localhost:{
+    localhost: {
       url: "http://127.0.0.1:8545",
       chainId: 31337,
-    },
-    holesky : {
-      url: HOLESKY_RPC_URL,
-      chainId: 17000,
-      accounts: [`0x${PRIVATE_KEY}`]
     }
   },
-  solidity: "0.8.28",
-  etherscan:{
-    apiKey:{
-      holesky:ETHERSCAN_API_KEY
-    }
-  }
+  solidity: "0.8.28"
 };
+
+// Ajouter la configuration Holesky seulement si les variables d'environnement sont présentes
+if (process.env.PRIVATE_KEY && process.env.PRIVATE_KEY.length === 64 &&
+    process.env.HOLESKY_RPC_URL && process.env.ETHERSCAN_API_KEY) {
+  config.networks.holesky = {
+    url: process.env.HOLESKY_RPC_URL,
+    chainId: 17000,
+    accounts: [process.env.PRIVATE_KEY]
+  };
+  
+  config.etherscan = {
+    apiKey: {
+      holesky: process.env.ETHERSCAN_API_KEY
+    }
+  };
+}
+
+module.exports = config;
