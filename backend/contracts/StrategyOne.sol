@@ -381,7 +381,7 @@ contract StrategyOne is ReentrancyGuard {
             clientYield: clientYield
         }));
 
-        // Mint Strategy NFT
+        // Mint NFT
         uint256 NFTid = IStrategyNFT(nftContract).mintStrategyNFT(
             msg.sender,
             amount,
