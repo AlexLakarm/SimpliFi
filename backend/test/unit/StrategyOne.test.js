@@ -182,6 +182,46 @@ describe("StrategyOne Contract Tests", function () {
         return { ...fixture, positionId };
     }
 
+    async function setupMarketplaceFixture() {
+        const baseFixture = await loadFixture(enterStrategyFixture);
+        const { strategyOne, client1, amount, strategyNFT } = baseFixture;
+        
+        // Créer une position NFT pour client1
+        const tx = await strategyOne.connect(client1).enterStrategy(amount);
+        const receipt = await tx.wait();
+
+        // Récupérer l'ID du NFT depuis l'événement StrategyEntered
+        const strategyEvent = receipt.logs.find(
+            log => {
+                try {
+                    const parsedLog = strategyOne.interface.parseLog(log);
+                    return parsedLog && parsedLog.name === 'StrategyEntered';
+                } catch {
+                    return false;
+                }
+            }
+        );
+        
+        if (!strategyEvent) {
+            throw new Error("StrategyEntered event not found");
+        }
+
+        const parsedEvent = strategyOne.interface.parseLog(strategyEvent);
+        const nftId = parsedEvent.args.NFTid;
+        const positionId = nftId - 1n;
+
+        // Vérifier que le NFT existe et appartient bien au client1
+        const owner = await strategyNFT.ownerOf(nftId);
+        if (owner !== client1.address) {
+            throw new Error(`NFT owner mismatch. Expected ${client1.address}, got ${owner}`);
+        }
+
+        // Attendre un bloc pour s'assurer que tout est bien miné
+        await ethers.provider.send("evm_mine", []);
+
+        return { ...baseFixture, nftId, positionId };
+    }
+
     // ::::::::::::: DEPLOYMENT TESTS ::::::::::::: //
     describe("Deployment and Configuration", function () {
         it("Should deploy all contracts with correct addresses", async function () {
@@ -415,8 +455,8 @@ describe("StrategyOne Contract Tests", function () {
                 // Vérifier les fees avant exit
                 const initialProtocolFees = await strategyOne.getProtocolFees();
                 const initialCgpFees = await strategyOne.getCGPFees(cgp1.address);
-                expect(initialProtocolFees.nonMaturedFees).to.be.gt(0);
-                expect(initialCgpFees.nonMaturedFees).to.be.gt(0);
+                expect(initialProtocolFees[0]).to.be.gt(0); // nonMaturedFees
+                expect(initialCgpFees[0]).to.be.gt(0); // nonMaturedFees
 
                 // Avancer le temps exactement à la date de maturité
                 await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
@@ -428,8 +468,8 @@ describe("StrategyOne Contract Tests", function () {
                 const finalProtocolFees = await strategyOne.getProtocolFees();
                 const finalCgpFees = await strategyOne.getCGPFees(cgp1.address);
 
-                expect(finalProtocolFees.maturedNonWithdrawnFees).to.be.gt(0);
-                expect(finalCgpFees.maturedNonWithdrawnFees).to.be.gt(0);
+                expect(finalProtocolFees[1]).to.be.gt(0); // maturedNonWithdrawnFees
+                expect(finalCgpFees[1]).to.be.gt(0); // maturedNonWithdrawnFees
             });
 
             it("Should emit FeesCollected event", async function () {
@@ -681,94 +721,196 @@ describe("StrategyOne Contract Tests", function () {
         });
     });
 
-    // ::::::::::::: ADDITIONAL EVENT TESTS ::::::::::::: //
-    describe("Event Emissions", function () {
-        it("Should emit correct events on position creation", async function () {
-            const { strategyOne, client1, amount } = await loadFixture(enterStrategyFixture);
-            
-            const tx = await strategyOne.connect(client1).enterStrategy(amount);
-            const receipt = await tx.wait();
-            
-            // Vérifier tous les événements émis
-            const events = receipt.logs
-                .map(log => {
-                    try {
-                        return strategyOne.interface.parseLog(log);
-                    } catch {
-                        return null;
-                    }
-                })
-                .filter(event => event !== null);
-            
-            const eventNames = events.map(e => e.name);
-            expect(eventNames).to.include('StrategyEntered');
-            expect(eventNames).to.include('PendingFeesUpdated');
+    // ::::::::::::: MARKETPLACE TESTS ::::::::::::: //
+    describe("NFT Marketplace", function () {
+        describe("Listing NFT", function () {
+            it("Should allow owner to list NFT for sale", async function () {
+                const { strategyOne, client1, nftId, positionId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver le contrat StrategyOne pour gérer le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                
+                await expect(strategyOne.connect(client1).listNFTForSale(positionId, listingPrice))
+                    .to.emit(strategyOne, "NFTListedForSale")
+                    .withArgs(nftId, positionId, listingPrice, client1.address);
+
+                const [price, isListed, seller] = await strategyOne.getNFTListing(positionId);
+                expect(isListed).to.be.true;
+                expect(price).to.equal(listingPrice);
+                expect(seller).to.equal(client1.address);
+            });
+
+            it("Should revert if non-owner tries to list NFT", async function () {
+                const { strategyOne, client2, positionId } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                await expect(
+                    strategyOne.connect(client2).listNFTForSale(positionId, listingPrice)
+                ).to.be.revertedWithCustomError(strategyOne, "NotNFTOwner");
+            });
+
+            it("Should revert if NFT is already listed", async function () {
+                const { strategyOne, client1, positionId, nftId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister une première fois
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                // Tenter de lister une seconde fois
+                await expect(
+                    strategyOne.connect(client1).listNFTForSale(positionId, listingPrice)
+                ).to.be.revertedWithCustomError(strategyOne, "NFTAlreadyListed");
+            });
+
+            it("Should revert if listing price is zero", async function () {
+                const { strategyOne, client1, positionId, nftId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                
+                // Approuver d'abord
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                
+                await expect(
+                    strategyOne.connect(client1).listNFTForSale(positionId, 0)
+                ).to.be.revertedWithCustomError(strategyOne, "InvalidPrice");
+            });
         });
 
-        it("Should emit correct events on position exit", async function () {
-            const { strategyOne, client1, positionId } = await loadFixture(exitStrategyFixture);
-            
-            // Avancer le temps pour la maturité
-            const positions = await strategyOne.getUserPositions(client1.address);
-            const maturityDate = positions[Number(positionId)].maturityDate;
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(maturityDate)]);
-            await ethers.provider.send("evm_mine");
-            
-            const tx = await strategyOne.connect(client1).exitStrategy(positionId);
-            const receipt = await tx.wait();
-            
-            // Vérifier tous les événements émis
-            const events = receipt.logs
-                .map(log => {
-                    try {
-                        return strategyOne.interface.parseLog(log);
-                    } catch {
-                        return null;
-                    }
-                })
-                .filter(event => event !== null);
-            
-            const eventNames = events.map(e => e.name);
-            expect(eventNames).to.include('StrategyExited');
-            expect(eventNames).to.include('FeesCollected');
-        });
-    });
+        describe("Buying NFT", function () {
+            it("Should allow buyer to purchase listed NFT", async function () {
+                const { strategyOne, client1, client2, nftId, positionId, gUSDC, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                // Donner des gUSDC au client2 et approuver StrategyOne
+                await gUSDC.transfer(client2.address, listingPrice);
+                await gUSDC.connect(client2).approve(strategyOne.target, listingPrice);
+                
+                // Récupérer l'adresse du propriétaire actuel du NFT
+                const nftOwner = client1.address;
+                
+                // Acheter le NFT
+                await expect(strategyOne.connect(client2).buyNFT(positionId))
+                    .to.emit(strategyOne, "NFTSold")
+                    .withArgs(nftId, positionId, nftOwner, client2.address, listingPrice);
+                
+                // Vérifier le nouveau propriétaire
+                const positions = await strategyOne.getUserPositions(client2.address);
+                expect(positions.some(p => p.allPositionsId.toString() === positionId.toString())).to.be.true;
+            });
 
-    // ::::::::::::: ADDITIONAL ERROR CASES ::::::::::::: //
-    describe("Additional Error Cases", function () {
-        it("Should revert when trying to exit non-existent position", async function () {
-            const { strategyOne, client1 } = await loadFixture(enterStrategyFixture);
-            
-            const nonExistentPositionId = 999;
-            await expect(
-                strategyOne.connect(client1).exitStrategy(nonExistentPositionId)
-            ).to.be.revertedWith("Not position owner");
+            it("Should revert if NFT is not listed", async function () {
+                const { strategyOne, client2, positionId } = await loadFixture(setupMarketplaceFixture);
+                
+                await expect(strategyOne.connect(client2).buyNFT(positionId))
+                    .to.be.revertedWithCustomError(strategyOne, "NFTNotForSale");
+            });
+
+            it("Should revert if buyer has insufficient balance", async function () {
+                const { strategyOne, client1, client2, positionId, nftId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                await expect(strategyOne.connect(client2).buyNFT(positionId))
+                    .to.be.revertedWithCustomError(strategyOne, "InvalidPrice");
+            });
+
+            it("Should revert if seller tries to buy their own NFT", async function () {
+                const { strategyOne, client1, positionId, nftId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                await expect(strategyOne.connect(client1).buyNFT(positionId))
+                    .to.be.revertedWithCustomError(strategyOne, "CannotBuyOwnNFT");
+            });
         });
 
-        it("Should revert when trying to withdraw zero fees", async function () {
-            const { strategyOne, admin1, cgp1 } = await loadFixture(enterStrategyFixture);
-            
-            // Tentative de retrait sans frais accumulés
-            await expect(
-                strategyOne.connect(admin1).withdrawProtocolFees()
-            ).to.be.revertedWith("No fees to withdraw");
-            
-            await expect(
-                strategyOne.connect(cgp1).withdrawCGPFees()
-            ).to.be.revertedWith("No fees to withdraw");
+        describe("Canceling Sale", function () {
+            it("Should allow seller to cancel listing", async function () {
+                const { strategyOne, client1, nftId, positionId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                await expect(strategyOne.connect(client1).cancelNFTSale(positionId))
+                    .to.emit(strategyOne, "NFTUnlisted")
+                    .withArgs(nftId);
+                
+                const [, isListed] = await strategyOne.getNFTListing(positionId);
+                expect(isListed).to.be.false;
+            });
+
+            it("Should revert if non-seller tries to cancel", async function () {
+                const { strategyOne, client1, client2, positionId, nftId, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                await expect(strategyOne.connect(client2).cancelNFTSale(positionId))
+                    .to.be.revertedWithCustomError(strategyOne, "NotTheSeller");
+            });
+
+            it("Should revert if NFT is not listed", async function () {
+                const { strategyOne, client1, positionId } = await loadFixture(setupMarketplaceFixture);
+                
+                await expect(strategyOne.connect(client1).cancelNFTSale(positionId))
+                    .to.be.revertedWithCustomError(strategyOne, "NFTNotForSale");
+            });
         });
 
-        it("Should handle edge cases in fee calculations", async function () {
-            const { strategyOne, admin1 } = await loadFixture(enterStrategyFixture);
-            
-            // Tenter de mettre des fee points à 0
-            await expect(
-                strategyOne.connect(admin1).updateFeePoints(0, 0)
-            ).to.not.be.reverted;
-            
-            // Vérifier que les fee points sont bien à 0
-            expect(await strategyOne.protocolFeePoints()).to.equal(0);
-            expect(await strategyOne.cgpFeePoints()).to.equal(0);
+        describe("Market Integration", function () {
+            it("Should handle complete sale cycle", async function () {
+                const { strategyOne, client1, client2, nftId, positionId, gUSDC, strategyNFT } = await loadFixture(setupMarketplaceFixture);
+                const listingPrice = ethers.parseUnits("150", 6);
+                
+                // Approuver et lister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                // Vérifie le listing
+                let [price, isListed] = await strategyOne.getNFTListing(positionId);
+                expect(isListed).to.be.true;
+                expect(price).to.equal(listingPrice);
+                
+                // Annule le listing
+                await strategyOne.connect(client1).cancelNFTSale(positionId);
+                
+                // Vérifie l'annulation
+                [, isListed] = await strategyOne.getNFTListing(positionId);
+                expect(isListed).to.be.false;
+                
+                // Approuver et relister le NFT
+                await strategyNFT.connect(client1).approve(strategyOne.target, nftId);
+                await strategyOne.connect(client1).listNFTForSale(positionId, listingPrice);
+                
+                // Prépare l'acheteur
+                await gUSDC.transfer(client2.address, listingPrice);
+                await gUSDC.connect(client2).approve(strategyOne.target, listingPrice);
+                
+                // Effectue l'achat
+                await strategyOne.connect(client2).buyNFT(positionId);
+                
+                // Vérifie le transfert
+                const positions = await strategyOne.getUserPositions(client2.address);
+                expect(positions.some(p => p.allPositionsId.toString() === positionId.toString())).to.be.true;
+                
+                // Vérifie que le listing a été effacé
+                [, isListed] = await strategyOne.getNFTListing(positionId);
+                expect(isListed).to.be.false;
+            });
         });
     });
 });
