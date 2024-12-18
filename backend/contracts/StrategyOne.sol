@@ -5,6 +5,21 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+// ::::::::::::: CUSTOM ERRORS ::::::::::::: //
+
+/// @notice Erreur quand quelqu'un essaie de lister un NFT dont il n'est pas propriétaire
+error NotNFTOwner();
+/// @notice Erreur quand quelqu'un essaie de lister un NFT déjà en vente
+error NFTAlreadyListed();
+/// @notice Erreur quand quelqu'un essaie de lister un NFT avec un prix nul
+error InvalidPrice();
+/// @notice Erreur quand quelqu'un essaie d'acheter un NFT qui n'est pas en vente
+error NFTNotForSale();
+/// @notice Erreur quand quelqu'un essaie d'acheter son propre NFT
+error CannotBuyOwnNFT();
+/// @notice Erreur quand quelqu'un essaie d'annuler une vente dont il n'est pas le vendeur
+error NotTheSeller();
+
 // ::::::::::::: INTERFACES ::::::::::::: // 
 
 /// @title IRoleControl
@@ -206,6 +221,11 @@ contract StrategyOne is ReentrancyGuard {
         uint256 indexed NFTid,
         uint256 allPositionsId,
         address seller
+    );
+
+    /// @notice Emitted when an NFT is unlisted
+    event NFTUnlisted(
+        uint256 indexed NFTid
     );
 
     /// @notice Emitted when fees are collected
@@ -607,13 +627,11 @@ contract StrategyOne is ReentrancyGuard {
     /// @param _price Le prix de vente en gUSDC
     function listNFTForSale(uint256 _positionId, uint256 _price) external nonReentrant {
         uint256 NFTid = _positionId + 1;
-        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not the owner");
-        require(_price > 0, "Price must be > 0");
-        require(allPositions[_positionId].isActive, "Position not active");
-        require(!nftSales[_positionId].isOnSale, "Already on sale");
-
-        // Approuver le contrat pour le transfert du NFT
-        IStrategyNFT(nftContract).approve(address(this), NFTid);
+        if (IStrategyNFT(nftContract).ownerOf(NFTid) != msg.sender) revert NotNFTOwner();
+        if (_price == 0) revert InvalidPrice();
+        if (!allPositions[_positionId].isActive) revert InvalidPrice();
+        if (nftSales[_positionId].isOnSale) revert NFTAlreadyListed();
+        if (IStrategyNFT(nftContract).getApproved(NFTid) != address(this)) revert NotNFTOwner();
 
         // Mettre le NFT en vente
         nftSales[_positionId] = NFTSale({
@@ -629,14 +647,15 @@ contract StrategyOne is ReentrancyGuard {
     /// @dev Protected against reentrancy
     function cancelNFTSale(uint256 allPositionsId) external nonReentrant {
         Position storage position = allPositions[allPositionsId];
-        require(position.owner == msg.sender, "Not position owner");
-        require(position.isActive, "Position not active");
+        if (position.owner != msg.sender) revert NotTheSeller();
+        if (!position.isActive) revert InvalidPrice();
+        if (!nftSales[allPositionsId].isOnSale) revert NFTNotForSale();
 
         uint256 NFTid = allPositionsId + 1;
-        require(IStrategyNFT(nftContract).ownerOf(NFTid) == msg.sender, "Not NFT owner");
+        if (IStrategyNFT(nftContract).ownerOf(NFTid) != msg.sender) revert NotNFTOwner();
 
         delete nftSales[allPositionsId];
-        emit NFTSaleCanceled(NFTid, allPositionsId, msg.sender);
+        emit NFTUnlisted(NFTid);
     }
 
     /// @notice Buys an NFT that is listed for sale
@@ -645,23 +664,23 @@ contract StrategyOne is ReentrancyGuard {
     function buyNFT(uint256 allPositionsId) external nonReentrant {
         // Check if NFT is listed for sale
         NFTSale memory sale = nftSales[allPositionsId];
-        require(sale.isOnSale, "NFT not for sale");
+        if (!sale.isOnSale) revert NFTNotForSale();
 
         // Check if position is still active
         Position storage position = allPositions[allPositionsId];
-        require(position.isActive, "Position not active");
+        if (!position.isActive) revert InvalidPrice();
 
         // Get NFT details and verify NFT ownership
         uint256 NFTid = allPositionsId + 1;
         address nftOwner = IStrategyNFT(nftContract).ownerOf(NFTid);
-        require(nftOwner != msg.sender, "Cannot buy your own NFT");
+        if (nftOwner == msg.sender) revert CannotBuyOwnNFT();
 
         // Get gUSDC token contract
         IERC20 gUSDC = IERC20(IMockPendleRouter(router).gUSDC());
 
         // Check token approvals
-        require(gUSDC.allowance(msg.sender, address(this)) >= sale.salePrice, "Insufficient gUSDC allowance");
-        require(IStrategyNFT(nftContract).getApproved(NFTid) == address(this), "NFT not approved for transfer");
+        if (gUSDC.allowance(msg.sender, address(this)) < sale.salePrice) revert InvalidPrice();
+        if (IStrategyNFT(nftContract).getApproved(NFTid) != address(this)) revert NotNFTOwner();
 
         // Update state first (checks-effects pattern)
         bool positionFound = false;
@@ -675,7 +694,7 @@ contract StrategyOne is ReentrancyGuard {
                 break;
             }
         }
-        require(positionFound, "Position not found in seller's positions");
+        if (!positionFound) revert NotNFTOwner();
 
         // Update position ownership
         position.owner = msg.sender;
@@ -685,7 +704,7 @@ contract StrategyOne is ReentrancyGuard {
         delete nftSales[allPositionsId];
 
         // Perform external interactions last (interactions pattern)
-        require(gUSDC.transferFrom(msg.sender, nftOwner, sale.salePrice), "gUSDC transfer failed");
+        if (!gUSDC.transferFrom(msg.sender, nftOwner, sale.salePrice)) revert InvalidPrice();
         IStrategyNFT(nftContract).transferFrom(nftOwner, msg.sender, NFTid);
 
         emit NFTSold(NFTid, allPositionsId, nftOwner, msg.sender, sale.salePrice);
@@ -770,6 +789,21 @@ contract StrategyOne is ReentrancyGuard {
 
     function getProtocolFees() external view returns (Fees memory) {
         return protocolFees;
+    }
+
+    /// @notice Récupère les informations de vente d'un NFT
+    /// @param _positionId L'ID de la position
+    /// @return price Le prix de vente en gUSDC
+    /// @return isListed Si le NFT est en vente
+    /// @return seller L'adresse du vendeur
+    function getNFTListing(uint256 _positionId) external view returns (
+        uint256 price,
+        bool isListed,
+        address seller
+    ) {
+        NFTSale memory sale = nftSales[_positionId];
+        Position memory position = allPositions[_positionId];
+        return (sale.salePrice, sale.isOnSale, position.owner);
     }
 } 
 
